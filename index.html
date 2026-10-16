@@ -353,8 +353,9 @@ $("rosterFile").addEventListener("change",async e=>{
  try{
   const wb=await readExcel(file);
   roster=extractRoster(wb);
-  setImportStatus("已載入 "+roster.length+" 位學生；獎懲項目 "+rules.length+" 筆");
- }catch(err){setImportStatus(err.message,true);}
+  setImportStatus("學生名冊匯入成功："+roster.length+" 位");
+  $("studentInput").dispatchEvent(new Event("input"));
+ }catch(err){roster=[];setImportStatus("學生名冊匯入失敗："+err.message,true);}
 });
 $("templateFile").addEventListener("change",async e=>{
  const file=e.target.files[0];
@@ -363,13 +364,12 @@ $("templateFile").addEventListener("change",async e=>{
   const wb=await readExcel(file);
   templateWorkbook=wb;
   rules=extractRules(wb);
-  refreshRules();
   setImportStatus("已載入 "+roster.length+" 位學生；獎懲項目 "+rules.length+" 筆");
  }catch(err){setImportStatus(err.message,true);}
 });
-$("ruleSearch").addEventListener("input",refreshRules);
-$("articleFilter").addEventListener("change",refreshRules);
-$("ruleSelect").addEventListener("change",applyRule);
+$("article").addEventListener("change",updateClause);
+$("clause").addEventListener("change",updateItem);
+$("item").addEventListener("change",updateReason);
 $("previewBtn").addEventListener("click",preview);
 $("exportBtn").addEventListener("click",exportExcel);
 $("clearBtn").addEventListener("click",()=>{
