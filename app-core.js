@@ -129,18 +129,62 @@
     return {student: matches[0]};
   }
 
+  function parseStudentInputs(value, roster) {
+    const inputs = [], names = new Set(roster.map(student => normalize(student.name)));
+    const add = (token, note) => parseTokens(token).forEach(token => inputs.push({token, note}));
+    for (const line of clean(value).split(/[\r\n]+/)) {
+      let note = "";
+      for (const group of line.split(/[,，、;；]+/)) {
+        let pending = [];
+        const emit = (token, prefix) => {
+          if (pending.length || prefix !== undefined) {
+            note = clean(pending.concat(prefix === undefined ? [] : [prefix]).join(" ")).replace(/[:：]+\s*$/, "").trim();
+          }
+          pending = [];
+          add(token, note);
+        };
+        for (const word of group.split(/\s+/).filter(Boolean)) {
+          const normalized = word.normalize("NFKC");
+          // Exact names take priority; never guess a student from a name suffix.
+          if (names.has(normalize(word)) || /^'?\d+(?:\.0+)?$|^\d+[-–~～]\d+$/.test(normalized)) {
+            emit(word);
+            continue;
+          }
+          const colon = Math.max(word.lastIndexOf(":"), word.lastIndexOf("："));
+          if (colon >= 0 && colon < word.length - 1) {
+            emit(word.slice(colon + 1), word.slice(0, colon));
+            continue;
+          }
+          const attached = word.match(/^(.*?[^0-9０-９.．\-–~～])([0-9０-９]+(?:[-–~～][0-9０-９]+|[.．][0０]+)?)$/);
+          if (attached && /[^\d\s:：'.\-–~～]/.test(attached[1].normalize("NFKC"))) {
+            emit(attached[2], attached[1]);
+            continue;
+          }
+          pending.push(word);
+        }
+        // A label with no following student is still reported, never discarded.
+        pending.forEach(token => add(token, ""));
+      }
+    }
+    return inputs;
+  }
+
   function resolveStudents(value, roster) {
-    const tokens = parseTokens(value), matches = new Map(), errors = [], students = [];
-    for (const token of tokens) {
+    const inputs = parseStudentInputs(value, roster);
+    const tokens = inputs.map(input => input.token), matches = new Map(), errors = [], students = [], entries = [];
+    for (const {token, note} of inputs) {
       const match = matchStudent(token, roster);
       if (match.error) { errors.push({token, message: match.error}); continue; }
       students.push(match.student);
+      entries.push({student: match.student, note});
       const key = match.student.school;
       const previous = matches.get(key);
-      if (previous) previous.count++;
-      else matches.set(key, {student: match.student, count: 1});
+      if (previous) {
+        previous.count++;
+        if (note && !previous.notes.includes(note)) previous.notes.push(note);
+      } else matches.set(key, {student: match.student, count: 1, notes: note ? [note] : []});
     }
-    return {tokens, matches: Array.from(matches.values()), errors, students};
+    return {tokens, matches: Array.from(matches.values()), errors, students, entries};
   }
 
   function duplicateStudents(records) {
@@ -181,7 +225,8 @@
     if (!resolved.tokens.length) throw new Error("請輸入學生。");
     if (!resolved.matches.length) throw new Error("沒有可匯出的學生，請確認上方紅字提示後重新輸入。");
     const details = rewardDetails(template, selection);
-    const records = resolved.students.map(student => Object.assign({school: student.school, name: student.name}, details));
+    const records = resolved.entries.map(({student, note}) => Object.assign({school: student.school, name: student.name}, details,
+      {reason: details.reason + (note ? "（" + note + "）" : "")}));
     return {records, resolved};
   }
 

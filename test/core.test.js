@@ -76,6 +76,72 @@ test("ranges expand, reverse ranges fail, blank female number never matches 000"
   assert(core.matchStudent("000", roster).error);
 });
 
+test("prefix notes accept attached, spaced, NBSP and either colon without changing the base reason", () => {
+  const reason = "自行填寫的事由。\n保留原本的第二行（已有補充）。";
+  const selected = {...selection, reason};
+  const before = JSON.stringify(selected);
+  const input = ["文書公差991001", "文書公差\u00a0\u00a0\u00a0 991002", "文書公差 991002", "文書公差：991002", "文書公差:991002"].join("\n");
+  const result = core.buildRecords(input, roster, template, selected);
+  assert.equal(result.resolved.errors.length, 0);
+  assert.deepEqual(result.records.map(record => record.school), [roster[0].school, ...Array(4).fill(roster[1].school)]);
+  assert(result.records.every(record => record.reason === reason + "（文書公差）"));
+  assert.equal(result.resolved.matches[1].count, 4);
+  assert.deepEqual(result.resolved.matches[1].notes, ["文書公差"]);
+  assert.equal(JSON.stringify(selected), before);
+  const repeat = core.buildRecords(input, roster, template, selected);
+  assert.deepEqual(repeat.records, result.records);
+  const workbook = xlsx.read(xlsx.write(core.exportWorkbook(result.records, template, xlsx), {type: "buffer", bookType: "xlsx"}));
+  const data = xlsx.utils.sheet_to_json(workbook.Sheets.工作表1, {header: 1});
+  assert.equal(data.length, 6);
+  assert(data.slice(1).every(row => row[5] === reason + "（文書公差）"));
+});
+
+test("notes follow a same-line list, change with a new prefix, and reset on a new line", () => {
+  const result = core.buildRecords("文書公差：2 11、12 衛生公差:2\n11\n巡查公差 2", roster, template, selection);
+  assert.equal(result.resolved.errors.length, 0);
+  assert.deepEqual(result.records.map(record => record.reason), [
+    "測試事由甲。（文書公差）", "測試事由甲。（文書公差）", "測試事由甲。（文書公差）",
+    "測試事由甲。（衛生公差）", "測試事由甲。", "測試事由甲。（巡查公差）"
+  ]);
+});
+
+test("notes support ranges, full-width identifiers and names separated from labels", () => {
+  const result = core.buildRecords("文書公差：０１１-０１２\n清潔公差　測試甲\nＡ值勤:測試乙\n文書公差991001.0", roster, template, selection);
+  assert.equal(result.resolved.errors.length, 0);
+  assert.deepEqual(result.records.map(record => record.name), ["測試乙", "同名測試", "測試甲", "測試乙", "測試甲"]);
+  assert.deepEqual(result.records.map(record => record.reason), ["測試事由甲。（文書公差）", "測試事由甲。（文書公差）", "測試事由甲。（清潔公差）", "測試事由甲。（Ａ值勤）", "測試事由甲。（文書公差）"]);
+  assert.throws(() => core.resolveStudents("公差012-011", roster), /範圍/);
+});
+
+test("unknown or ambiguous annotated students and unattached labels remain warnings", () => {
+  const result = core.buildRecords("文書公差:999999\n巡查公差:同名測試\n11\n只有註記", roster, template, selection);
+  assert.equal(result.records.length, 1);
+  assert.equal(result.records[0].reason, "測試事由甲。");
+  assert.deepEqual(result.resolved.errors.map(error => error.token), ["999999", "同名測試", "只有註記"]);
+  assert.match(result.resolved.errors[1].message, /多位/);
+});
+
+test("exact names have priority and invalid numeric input never matches a valid suffix", () => {
+  const extra = {school: "1999100005", name: "測試5", female: "013", team: "991005"};
+  const result = core.buildRecords("測試5\n991001991002\n文書公差991001.5\n文書公差測試甲\n11", roster.concat(extra), template, selection);
+  assert.deepEqual(result.records.map(record => record.school), [extra.school, roster[1].school]);
+  assert(result.records.every(record => record.reason === "測試事由甲。"));
+  assert.equal(result.resolved.errors.length, 3);
+});
+
+test("repeated students can keep separate notes and edits do not append notes again", () => {
+  const result = core.buildRecords("文書公差:2\n衛生公差:2\n2", roster, template, selection);
+  const before = result.records.map(record => record.reason);
+  assert.deepEqual(before, ["測試事由甲。（文書公差）", "測試事由甲。（衛生公差）", "測試事由甲。"]);
+  assert.equal(core.duplicateStudents(result.records)[0].count, 3);
+  const adjusted = core.editRecords(result.records, [0], template, {adjustReason: "行為之動機", adjustAmount: "小過一次"});
+  assert.deepEqual(adjusted.map(record => record.reason), before);
+  const changed = core.editRecords(adjusted, [1], template, {reason: "單筆自行改寫。（衛生公差）"});
+  assert.equal(changed[0].reason, before[0]);
+  assert.equal(changed[1].reason, "單筆自行改寫。（衛生公差）");
+  assert.equal(changed[2].reason, before[2]);
+});
+
 test("unknown and ambiguous inputs are reported while other students can preview and export", () => {
   assert.match(core.matchStudent("同名測試", roster).error, /多位/);
   const result = core.buildRecords("測試甲,無此人,同名測試,11", roster, template, selection);

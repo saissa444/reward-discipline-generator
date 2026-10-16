@@ -82,9 +82,10 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 <h2>② 批次選擇學生</h2>
 
 <label for="studentInput">輸入學生（可多筆）</label>
-<textarea id="studentInput" placeholder="例如：002、449999、王小明（可混合輸入）"></textarea>
+<textarea id="studentInput" placeholder="例如：002、449999、王小明（可混合輸入）&#10;也可輸入：文書公差：002"></textarea>
 <div id="studentCheckPanel" aria-live="polite">尚未輸入學生資料</div>
 <p class="note">支援女生隊號、建制隊號、姓名混合輸入；以換行、逗號、頓號或空格分隔。女生隊號可省略前面的 0，也可輸入範圍（例如 002-010）。同批或不同批次的重複學生均可新增，預覽下方會以紅字顯示總筆數與重複次數。查無或無法唯一辨識的輸入會以紅字提醒並略過，其餘學生仍可新增及匯出。</p>
+<p class="note">可在學生前加註記，例如「文書公差002」、「文書公差 002」、「文書公差：002」或「文書公差:002」。批次新增時，會在該筆原有獎懲事由後加上「（文書公差）」，上方事由輸入內容保持原樣。同一行接續的學生共用前方註記；換行後可改用其他註記或不加註記。</p>
 </section>
 
 <section>
@@ -127,7 +128,7 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 <button id="clearRecordsBtn" type="button" class="danger" disabled>清空紀錄</button>
 </div>
 </section>
-<p class="note">版本 2026.10.16.7。匯入資料僅保留於此頁，重新整理後請重新選取檔案。</p>
+<p class="note">版本 2026.10.16.8。匯入資料僅保留於此頁，重新整理後請重新選取檔案。</p>
 </main>
 
 <dialog id="recordEditor" aria-labelledby="editTitle">
@@ -182,7 +183,7 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 })();
 </script>
 <script defer src="./vendor/xlsx.full.min.js?v=0.20.3"></script>
-<script defer src="./app-core.js?v=20261016-7"></script>
-<script defer src="./app.js?v=20261016-7"></script>
+<script defer src="./app-core.js?v=20261016-8"></script>
+<script defer src="./app.js?v=20261016-8"></script>
 </body>
 </html>

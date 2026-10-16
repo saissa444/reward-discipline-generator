@@ -484,6 +484,50 @@ async function main() {
     await text("resultStatus", /請輸入學生/);
     assert.equal(await $("exportBtn").getAttribute("href"), beforeClearInput);
     await checkDownload({count: 3, rows: [firstMain, secondMain, thirdMain]});
+
+    // Every prefix spelling appends a note per occurrence, never to the draft.
+    const annotationReason = "自行填寫的事由。\n保留原本第二行（已有補充）。";
+    const noteLines = ["文書公差" + students[0].team, "文書公差\u00a0\u00a0\u00a0  " + students[1].team,
+      "文書公差 " + students[2].team, "文書公差：" + students[2].team, "文書公差:" + students[2].team,
+      students[3].female];
+    await $("studentInput").fill(noteLines.join("\n"));
+    await choose(withoutItem.article, withoutItem.clause);
+    await $("reason").fill(annotationReason);
+    await text("studentCheckPanel", /無法辨識 0 筆/);
+    await text("studentCheckPanel", /註記：文書公差/);
+    await $("previewBtn").click();
+    await text("resultStatus", /已新增 6 筆.*目前共 9 筆/);
+    assert.equal(await $("reason").inputValue(), annotationReason);
+    const annotatedRows = [students[0], students[1], students[2], students[2], students[2], students[3]]
+      .map((student, index) => ({school: student.school, name: student.name, ...withoutItem,
+        reason: annotationReason + (index < 5 ? "（文書公差）" : ""), amount: baseAmount, adjustReason: "", adjustAmount: ""}));
+    const priorRows = [firstMain, secondMain, thirdMain];
+    await checkDownload({count: 9, rows: [...priorRows, ...annotatedRows]});
+    assert.equal(await cell(3, "reason").innerText(), annotationReason + "（文書公差）");
+    assert.equal(await cell(8, "reason").innerText(), annotationReason);
+    noteLines[0] = "巡查公差:" + students[0].team;
+    await $("studentInput").fill(noteLines.join("\n"));
+    await $("previewBtn").click();
+    await text("resultStatus", /已新增 6 筆.*目前共 15 筆/);
+    assert.equal(await $("reason").inputValue(), annotationReason);
+    const repeatedRows = annotatedRows.map((row, index) => ({...row,
+      reason: index === 0 ? annotationReason + "（巡查公差）" : row.reason}));
+    await checkDownload({count: 15, rows: [...priorRows, ...annotatedRows, ...repeatedRows]});
+    await text("duplicateStatus", /共 6 筆，重複 5 次/);
+    await editRow(3);
+    assert.equal(await $("editReason").inputValue(), annotationReason + "（文書公差）");
+    await $("editApplyRule").uncheck();
+    await $("editApplyReason").uncheck();
+    await $("editAdjustReason").selectOption(template.adjustmentOptions[0]);
+    await $("editAdjustAmount").selectOption(template.amountOptions[0]);
+    await $("saveEditBtn").click();
+    annotatedRows[0].adjustReason = template.adjustmentOptions[0];
+    annotatedRows[0].adjustAmount = template.amountOptions[0];
+    await checkDownload({count: 15, rows: [...priorRows, ...annotatedRows, ...repeatedRows]});
+    await page.locator("#previewBody .delete-row").nth(3).click();
+    await checkDownload({count: 14, rows: [...priorRows, ...annotatedRows, ...repeatedRows].filter((row, index) => index !== 3)});
+    assert.equal(await $("reason").inputValue(), annotationReason);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await $("clearRecordsBtn").click();
     assert.equal(await $("duplicateStatus").isVisible(), false);
     assert.equal(await $("exportBtn").getAttribute("href"), null);
@@ -499,7 +543,7 @@ async function main() {
       assert.match(await brokenPage.locator("#startupStatus").innerText(), /Excel 元件未完整載入/);
       assert.equal(await brokenPage.locator("#previewBtn").isDisabled(), true);
     } finally { await brokenContext.close(); }
-    console.log(JSON.stringify({engine, mobile: "iPhone 13", rosterCount: students.length, rulesCheckedInDOM: template.rules.length, editorRulesChecked: template.rules.length, exportedDownloads: downloadsChecked, fixedBaseAmountsInEveryExport: true, manualAmountEditingRemoved: true, batchesAppendWithEditsPreserved: true, repeatsKeptInExports: true, duplicateCountsInRed: true, failedBatchPreservesExport: true, clearInputPreservesRecords: true, customReasonsPreserved: true, singleAndBatchEditsSynced: true, deletionsSynced: true, selectionPreservedAfterDeletion: true, clearKeepsImportsAndForm: true, partialMatchExport: true, consoleErrors: errors.length, externalRequests: nonLocalRequests.length, uploadRequests: writes.length, missingLibraryHandled: true, result: "PASS"}));
+    console.log(JSON.stringify({engine, mobile: "iPhone 13", rosterCount: students.length, rulesCheckedInDOM: template.rules.length, editorRulesChecked: template.rules.length, exportedDownloads: downloadsChecked, prefixNotesPreserveBaseReason: true, perRecordNotesSurviveEdits: true, fixedBaseAmountsInEveryExport: true, manualAmountEditingRemoved: true, batchesAppendWithEditsPreserved: true, repeatsKeptInExports: true, duplicateCountsInRed: true, failedBatchPreservesExport: true, clearInputPreservesRecords: true, customReasonsPreserved: true, singleAndBatchEditsSynced: true, deletionsSynced: true, selectionPreservedAfterDeletion: true, clearKeepsImportsAndForm: true, partialMatchExport: true, consoleErrors: errors.length, externalRequests: nonLocalRequests.length, uploadRequests: writes.length, missingLibraryHandled: true, result: "PASS"}));
   } finally { await browser.close(); if (server) await new Promise(resolve => server.close(resolve)); }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

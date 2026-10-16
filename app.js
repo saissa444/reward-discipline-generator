@@ -99,11 +99,12 @@
     if (!roster.length) { panel.textContent = "請先匯入學生名冊"; return; }
     try {
       const resolved = core.resolveStudents($("studentInput").value, roster);
-      resolved.matches.forEach(({student, count}) => {
+      resolved.matches.forEach(({student, count, notes}) => {
         const row = document.createElement("div");
         row.className = "student-row" + (count > 1 ? " error" : "");
         row.textContent = student.name + (count > 1 ? "｜本批共 " + count + " 筆（重複 " + (count - 1) + " 次，全部新增）" : "｜辨識成功") +
-          "\n女生隊號：" + (student.female || "—") + "　建制隊號：" + (student.team || "—") + "　學籍號碼：" + student.school;
+          "\n女生隊號：" + (student.female || "—") + "　建制隊號：" + (student.team || "—") + "　學籍號碼：" + student.school +
+          (notes.length ? "\n註記：" + notes.join("、") : "");
         panel.appendChild(row);
       });
       resolved.errors.forEach(error => {
