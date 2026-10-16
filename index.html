@@ -174,10 +174,10 @@ function extractRoster(wb){
   if(nameCol<0||schoolCol<0)continue;
   const data=rows.slice(h.index+1).map(row=>({
    name:clean(row[nameCol]),
-   school:clean(row[schoolCol]).replace(/\\.0$/,""),
-   female:femaleCol>=0?clean(row[femaleCol]).replace(/\\.0$/,""):"",
-   team:teamCol>=0?clean(row[teamCol]).replace(/\\.0$/,""):""
-  })).filter(x=>x.name&&/^\\d{10}$/.test(x.school));
+   school:clean(row[schoolCol]).replace(/\.0$/,""),
+   female:femaleCol>=0?clean(row[femaleCol]).replace(/\.0$/,""):"",
+   team:teamCol>=0?clean(row[teamCol]).replace(/\.0$/,""):""
+  })).filter(x=>x.name&&/^\d{10}$/.test(x.school));
   if(name==="姓名查詢"&&data.length)return data;
   if(data.length>best.length)best=data;
  }
