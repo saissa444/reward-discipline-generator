@@ -204,7 +204,10 @@
         $("previewBody").appendChild(row);
       });
       const duplicates = result.resolved.matches.filter(match => match.count > 1).length;
-      status("resultStatus", "成功建立 " + output.length + " 筆紀錄" + (duplicates ? "；" + duplicates + " 位重複學生已各保留 1 筆。" : "。"), "ok");
+      const skipped = result.resolved.errors.length;
+      status("resultStatus", "成功建立 " + output.length + " 筆紀錄" +
+        (duplicates ? "；" + duplicates + " 位重複學生已各保留 1 筆。" : "。") +
+        (skipped ? "\n已略過 " + skipped + " 筆無法辨識的輸入（詳見上方紅字）；其餘學生可正常匯出。" : ""), skipped ? "warning" : "ok");
     } catch (error) {
       invalidatePreview(error.message);
       $("resultStatus").classList.add("error");

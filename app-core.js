@@ -147,7 +147,7 @@
     if (!template) throw new Error("請先匯入獎懲範本。");
     const resolved = resolveStudents(value, roster);
     if (!resolved.tokens.length) throw new Error("請輸入學生。");
-    if (resolved.errors.length) throw new Error("以下學生無法確認，請修正後再匯出：\n" + resolved.errors.map(error => error.token + "：" + error.message).join("\n"));
+    if (!resolved.matches.length) throw new Error("沒有可匯出的學生，請確認上方紅字提示後重新輸入。");
     if (!selection.article || !selection.clause) throw new Error("請依序選擇獎懲依據（條）、（款）。");
     const relevant = template.rules.filter(rule => rule.article === selection.article && rule.clause === selection.clause);
     if (relevant.some(rule => rule.item) && !selection.item) throw new Error("請選擇獎懲依據（目）。");

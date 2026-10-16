@@ -76,9 +76,21 @@ test("ranges expand, reverse ranges fail, blank female number never matches 000"
   assert(core.matchStudent("000", roster).error);
 });
 
-test("unknown and ambiguous students are errors, and prevent preview/export", () => {
+test("unknown and ambiguous inputs are reported while other students can preview and export", () => {
   assert.match(core.matchStudent("同名測試", roster).error, /多位/);
-  assert.throws(() => core.buildRecords("測試甲,無此人", roster, template, selection), /無法確認/);
+  const result = core.buildRecords("測試甲,無此人,同名測試,11", roster, template, selection);
+  assert.equal(result.records.length, 2);
+  assert.deepEqual(result.records.map(record => record.name), ["測試甲", "測試乙"]);
+  assert.equal(result.resolved.errors.length, 2);
+  assert.deepEqual(result.resolved.errors.map(error => error.token), ["無此人", "同名測試"]);
+  const workbook = xlsx.read(xlsx.write(core.exportWorkbook(result.records, template, xlsx), {type: "buffer", bookType: "xlsx"}));
+  const data = xlsx.utils.sheet_to_json(workbook.Sheets.工作表1, {header: 1});
+  assert.equal(data.length, 3);
+  assert.deepEqual(data.slice(1).map(row => row[1]), ["測試甲", "測試乙"]);
+});
+
+test("no matched students prevents an empty export", () => {
+  assert.throws(() => core.buildRecords("無此人,同名測試", roster, template, selection), /沒有可匯出/);
 });
 
 test("template keeps original sheet name, exact nine headers, defaults and optional adjustments", () => {

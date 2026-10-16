@@ -128,8 +128,17 @@ async function main() {
     await $("studentInput").fill(students[0].female + ",不存在的測試學生");
     assert.equal(await $("exportBtn").getAttribute("href"), null);
     await $("previewBtn").click();
-    await text("resultStatus", /無法確認/);
+    await text("resultStatus", /成功建立 1 筆/);
+    await text("resultStatus", /已略過 1 筆/);
+    assert.equal(await page.locator("#studentCheckPanel .error").count(), 1);
+    assert.equal(await $("resultStatus").getAttribute("class"), "status warning");
+    assert.equal(await $("exportBtn").getAttribute("aria-disabled"), "false");
+    await checkDownload({count: 1, fields: withItem});
+    await $("studentInput").fill("不存在的測試學生");
+    await $("previewBtn").click();
+    await text("resultStatus", /沒有可匯出/);
     assert.equal(await $("exportBtn").getAttribute("aria-disabled"), "true");
+    assert.equal(await $("exportBtn").getAttribute("href"), null);
     await $("studentInput").fill(students[0].female);
     const withoutItem = template.rules.find(rule => !rule.item);
     await choose(withoutItem.article, withoutItem.clause);
@@ -174,7 +183,7 @@ async function main() {
       assert.match(await brokenPage.locator("#startupStatus").innerText(), /Excel 元件未完整載入/);
       assert.equal(await brokenPage.locator("#previewBtn").isDisabled(), true);
     } finally { await brokenContext.close(); }
-    console.log(JSON.stringify({engine, mobile: "iPhone 13", rosterCount: students.length, rulesCheckedInDOM: template.rules.length, exportedDownloads: 2, consoleErrors: errors.length, externalRequests: nonLocalRequests.length, uploadRequests: writes.length, missingLibraryHandled: true, result: "PASS"}));
+    console.log(JSON.stringify({engine, mobile: "iPhone 13", rosterCount: students.length, rulesCheckedInDOM: template.rules.length, exportedDownloads: 3, partialMatchExport: true, consoleErrors: errors.length, externalRequests: nonLocalRequests.length, uploadRequests: writes.length, missingLibraryHandled: true, result: "PASS"}));
   } finally { await browser.close(); if (server) await new Promise(resolve => server.close(resolve)); }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

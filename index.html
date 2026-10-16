@@ -31,6 +31,7 @@ button:disabled,.button[aria-disabled="true"]{opacity:.5;cursor:not-allowed}
 .status{background:#eef5ff;border-radius:8px;padding:12px;margin-top:12px}
 .error{color:#b42318}
 .ok{color:#147d4d}
+.warning{color:#8a4b08;background:#fff7e6}
 .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
 .tablewrap{overflow:auto}
 table{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
@@ -71,7 +72,7 @@ th{background:#eef3f9}
 <label for="studentInput">輸入學生（可多筆）</label>
 <textarea id="studentInput" placeholder="例如：002、449999、王小明（可混合輸入）"></textarea>
 <div id="studentCheckPanel" aria-live="polite">尚未輸入學生資料</div>
-<p class="note">支援女生隊號、建制隊號、姓名混合輸入；以換行、逗號、頓號或空格分隔。女生隊號可省略前面的 0，也可輸入範圍（例如 002-010）。重複學生會以紅字警示，預覽各保留一筆；無法辨識者須修正後才能匯出。</p>
+<p class="note">支援女生隊號、建制隊號、姓名混合輸入；以換行、逗號、頓號或空格分隔。女生隊號可省略前面的 0，也可輸入範圍（例如 002-010）。重複學生會以紅字警示，預覽各保留一筆；查無或無法唯一辨識的輸入會以紅字提醒並略過，其餘學生仍可預覽及匯出。</p>
 </section>
 
 <section>
@@ -105,7 +106,7 @@ th{background:#eef3f9}
 <a id="exportBtn" class="button" role="button" aria-disabled="true" tabindex="-1">匯出 Excel</a>
 </div>
 </section>
-<p class="note">版本 2026.10.16.1。匯入資料僅保留於此頁，重新整理後請重新選取檔案。</p>
+<p class="note">版本 2026.10.16.2。匯入資料僅保留於此頁，重新整理後請重新選取檔案。</p>
 </main>
 
 <script>
@@ -131,7 +132,7 @@ th{background:#eef3f9}
 })();
 </script>
 <script defer src="./vendor/xlsx.full.min.js?v=0.20.3"></script>
-<script defer src="./app-core.js?v=20261016-1"></script>
-<script defer src="./app.js?v=20261016-1"></script>
+<script defer src="./app-core.js?v=20261016-2"></script>
+<script defer src="./app.js?v=20261016-2"></script>
 </body>
 </html>
