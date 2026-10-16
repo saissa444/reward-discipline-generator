@@ -84,7 +84,7 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 <label for="studentInput">輸入學生（可多筆）</label>
 <textarea id="studentInput" placeholder="例如：002、449999、王小明（可混合輸入）"></textarea>
 <div id="studentCheckPanel" aria-live="polite">尚未輸入學生資料</div>
-<p class="note">支援女生隊號、建制隊號、姓名混合輸入；以換行、逗號、頓號或空格分隔。女生隊號可省略前面的 0，也可輸入範圍（例如 002-010）。重複學生會以紅字警示，預覽各保留一筆；查無或無法唯一辨識的輸入會以紅字提醒並略過，其餘學生仍可預覽及匯出。</p>
+<p class="note">支援女生隊號、建制隊號、姓名混合輸入；以換行、逗號、頓號或空格分隔。女生隊號可省略前面的 0，也可輸入範圍（例如 002-010）。同批或不同批次的重複學生均可新增，預覽下方會以紅字顯示總筆數與重複次數。查無或無法唯一辨識的輸入會以紅字提醒並略過，其餘學生仍可新增及匯出。</p>
 </section>
 
 <section>
@@ -98,14 +98,15 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 <label for="adjustReason">6. 加重減輕事由（若無可不選擇）</label><select id="adjustReason"><option value="">無</option></select>
 <label for="adjustAmount">7. 加重減輕額度（若無可不選擇）</label><select id="adjustAmount"><option value="">無</option></select>
 <div class="actions">
-<button id="previewBtn" disabled>產生紀錄預覽</button>
+<button id="previewBtn" disabled>批次新增至預覽</button>
 <button id="clearBtn" class="secondary">清除輸入</button>
 </div>
+<p class="note">每次點「批次新增至預覽」都會接續新增，保留先前紀錄與編輯內容。更改或清除上方輸入只影響下一批；要刪除既有紀錄，請使用下方「刪除」或「清空紀錄」。</p>
 </section>
 
 <section>
 <h2>④ 預覽與匯出</h2>
-<div id="resultStatus" role="status" class="status">尚未產生紀錄</div>
+<div id="resultStatus" role="status" class="status">尚未新增紀錄</div>
 <div class="selection-bar">
 <span id="selectedCount" role="status">已選取 0 筆</span>
 <button id="editSelectedBtn" disabled>編輯已選取</button>
@@ -120,12 +121,13 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 <tbody id="previewBody"></tbody>
 </table>
 </div>
+<div id="duplicateStatus" role="status" class="status error" hidden></div>
 <div class="actions">
 <a id="exportBtn" class="button" role="button" aria-disabled="true" tabindex="-1">匯出 Excel</a>
 <button id="clearRecordsBtn" type="button" class="danger" disabled>清空紀錄</button>
 </div>
 </section>
-<p class="note">版本 2026.10.16.5。匯入資料僅保留於此頁，重新整理後請重新選取檔案。</p>
+<p class="note">版本 2026.10.16.6。匯入資料僅保留於此頁，重新整理後請重新選取檔案。</p>
 </main>
 
 <dialog id="recordEditor" aria-labelledby="editTitle">
@@ -182,7 +184,7 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 })();
 </script>
 <script defer src="./vendor/xlsx.full.min.js?v=0.20.3"></script>
-<script defer src="./app-core.js?v=20261016-5"></script>
-<script defer src="./app.js?v=20261016-5"></script>
+<script defer src="./app-core.js?v=20261016-6"></script>
+<script defer src="./app.js?v=20261016-6"></script>
 </body>
 </html>

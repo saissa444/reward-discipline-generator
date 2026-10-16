@@ -130,16 +130,27 @@
   }
 
   function resolveStudents(value, roster) {
-    const tokens = parseTokens(value), matches = new Map(), errors = [];
+    const tokens = parseTokens(value), matches = new Map(), errors = [], students = [];
     for (const token of tokens) {
       const match = matchStudent(token, roster);
       if (match.error) { errors.push({token, message: match.error}); continue; }
+      students.push(match.student);
       const key = match.student.school;
       const previous = matches.get(key);
       if (previous) previous.count++;
       else matches.set(key, {student: match.student, count: 1});
     }
-    return {tokens, matches: Array.from(matches.values()), errors};
+    return {tokens, matches: Array.from(matches.values()), errors, students};
+  }
+
+  function duplicateStudents(records) {
+    const counts = new Map();
+    records.forEach(record => {
+      const previous = counts.get(record.school);
+      if (previous) previous.count++;
+      else counts.set(record.school, {school: record.school, name: record.name, count: 1});
+    });
+    return Array.from(counts.values()).filter(student => student.count > 1);
   }
 
   function rewardDetails(template, selection) {
@@ -169,7 +180,7 @@
     if (!resolved.tokens.length) throw new Error("請輸入學生。");
     if (!resolved.matches.length) throw new Error("沒有可匯出的學生，請確認上方紅字提示後重新輸入。");
     const details = rewardDetails(template, selection);
-    const records = resolved.matches.map(({student}) => Object.assign({school: student.school, name: student.name}, details));
+    const records = resolved.students.map(student => Object.assign({school: student.school, name: student.name}, details));
     return {records, resolved};
   }
 
@@ -200,5 +211,5 @@
     return workbook;
   }
 
-  return {fields, clean, normalize, extractRoster, extractTemplate, parseTokens, matchStudent, resolveStudents, buildRecords, editRecords, exportWorkbook};
+  return {fields, clean, normalize, extractRoster, extractTemplate, parseTokens, matchStudent, resolveStudents, duplicateStudents, buildRecords, editRecords, exportWorkbook};
 });

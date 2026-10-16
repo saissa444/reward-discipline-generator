@@ -109,13 +109,37 @@ test("required item, rule existence and valid amount are checked against source 
   assert.throws(() => core.buildRecords("2", roster, template, {...selection, amount: "無效"}), /額度/);
 });
 
-test("deduplicate by school number and keep a custom multiline reason", () => {
+test("keep every repeated identifier in input order with a custom multiline reason", () => {
   const reason = "自行補充的獎懲事由。\n第二行說明。";
   const result = core.buildRecords("2,991001,測試甲,11", roster, template, {...selection, reason});
-  assert.equal(result.records.length, 2);
+  assert.equal(result.records.length, 4);
   assert.equal(result.resolved.matches[0].count, 3);
-  assert.equal(result.records[0].reason, reason);
-  assert.equal(result.records[1].reason, reason);
+  assert.deepEqual(result.records.map(record => record.school), [roster[0].school, roster[0].school, roster[0].school, roster[1].school]);
+  assert(result.records.every(record => record.reason === reason));
+  const edited = core.editRecords(result.records, [1], template, {reason: "只編輯這一筆重複紀錄。"});
+  assert.equal(edited[0].reason, reason);
+  assert.equal(edited[2].reason, reason);
+  assert.equal(edited[1].reason, "只編輯這一筆重複紀錄。");
+  const exported = xlsx.read(xlsx.write(core.exportWorkbook(edited, template, xlsx), {type: "buffer", bookType: "xlsx"}));
+  const data = xlsx.utils.sheet_to_json(exported.Sheets.工作表1, {header: 1});
+  assert.deepEqual(data.slice(1).map(row => row[0]), edited.map(record => record.school));
+  assert.deepEqual(data.slice(1).map(row => row[5]), edited.map(record => record.reason));
+});
+
+test("overlapping ranges retain repeated occurrences and skip only unresolved input", () => {
+  const result = core.buildRecords("11-12,無此人,11,測試甲,11", roster, template, selection);
+  assert.deepEqual(result.records.map(record => record.school), [roster[1].school, roster[2].school, roster[1].school, roster[0].school, roster[1].school]);
+  assert.equal(result.resolved.errors.length, 1);
+});
+
+test("duplicate counts use school identity and update when records are removed", () => {
+  const {records} = core.buildRecords("2,11,2,12,2", roster, template, selection);
+  const before = JSON.stringify(records);
+  assert.deepEqual(core.duplicateStudents(records), [{school: roster[0].school, name: roster[0].name, count: 3}]);
+  assert.equal(JSON.stringify(records), before);
+  assert.equal(core.duplicateStudents(records.slice(0, -1))[0].count, 2);
+  assert.deepEqual(core.duplicateStudents([]), []);
+  assert.deepEqual(core.duplicateStudents([{school: "1999100003", name: "同名測試"}, {school: "1999100004", name: "同名測試"}]), []);
 });
 
 test("optional adjustments may be blank, but amount requires a selected adjustment reason", () => {

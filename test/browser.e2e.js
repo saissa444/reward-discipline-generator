@@ -104,7 +104,7 @@ async function main() {
       assert.equal(await page.locator("#studentCheckPanel .error").count(), ambiguous);
     }
     await $("studentInput").fill([Number(students[0].female), students[0].team, students[0].name, students[1].female].join("、"));
-    await text("studentCheckPanel", /重複 3 次/);
+    await text("studentCheckPanel", /共 3 筆（重複 2 次/);
     assert.equal(await page.locator("#studentCheckPanel .error").count(), 1);
 
     // Walk every real rule through the actual cascading DOM controls.
@@ -125,35 +125,44 @@ async function main() {
     await $("adjustReason").selectOption(template.adjustmentOptions[0]);
     await $("adjustAmount").selectOption(template.amountOptions[0]);
     await $("previewBtn").click();
-    await text("resultStatus", /成功建立 2 筆/);
-    assert.equal(await page.locator("#previewBody tr").count(), 2);
+    await text("resultStatus", /已新增 4 筆.*目前共 4 筆/);
+    assert.equal(await page.locator("#previewBody tr").count(), 4);
     assert.equal(await page.locator("#previewBody tr:first-child td[data-field]").count(), 9);
-    await checkDownload({count: 2, fields: {...withItem, amount: template.defaultAmounts[withItem.article], adjustReason: template.adjustmentOptions[0], adjustAmount: template.amountOptions[0]}});
+    await checkDownload({count: 4, fields: {...withItem, amount: template.defaultAmounts[withItem.article], adjustReason: template.adjustmentOptions[0], adjustAmount: template.amountOptions[0]}});
+    await text("duplicateStatus", /共 3 筆，重複 2 次/);
+    assert.equal(await $("duplicateStatus").evaluate(element => getComputedStyle(element).color), "rgb(180, 35, 24)");
 
-    // Any changed student or rule invalidates the old downloadable workbook.
+    // Draft changes and failed batches preserve the accumulated export.
+    const firstBatchURL = await $("exportBtn").getAttribute("href");
     await $("studentInput").fill(students[0].female + ",不存在的測試學生");
-    assert.equal(await $("exportBtn").getAttribute("href"), null);
+    assert.equal(await $("exportBtn").getAttribute("href"), firstBatchURL);
     await $("previewBtn").click();
-    await text("resultStatus", /成功建立 1 筆/);
+    await text("resultStatus", /已新增 1 筆.*目前共 5 筆/);
     await text("resultStatus", /已略過 1 筆/);
     assert.equal(await page.locator("#studentCheckPanel .error").count(), 1);
     assert.equal(await $("resultStatus").getAttribute("class"), "status warning");
     assert.equal(await $("exportBtn").getAttribute("aria-disabled"), "false");
-    await checkDownload({count: 1, fields: withItem});
+    await checkDownload({count: 5, fields: withItem});
+    await text("duplicateStatus", /共 4 筆，重複 3 次/);
+    const partialBatchURL = await $("exportBtn").getAttribute("href");
     await $("studentInput").fill("不存在的測試學生");
     await $("previewBtn").click();
     await text("resultStatus", /沒有可匯出/);
-    assert.equal(await $("exportBtn").getAttribute("aria-disabled"), "true");
-    assert.equal(await $("exportBtn").getAttribute("href"), null);
+    assert.equal(await $("exportBtn").getAttribute("aria-disabled"), "false");
+    assert.equal(await $("exportBtn").getAttribute("href"), partialBatchURL);
+    assert.equal(await page.locator("#previewBody tr").count(), 5);
+    await $("clearRecordsBtn").click();
     await $("studentInput").fill(students[0].female);
     const withoutItem = template.rules.find(rule => !rule.item);
     await choose(withoutItem.article, withoutItem.clause);
     await $("previewBtn").click();
     await checkDownload({count: 1, fields: {...withoutItem, adjustReason: "", adjustAmount: ""}});
+    const withoutItemURL = await $("exportBtn").getAttribute("href");
     await $("amount").selectOption(template.amountOptions.find(amount => amount !== template.defaultAmounts[withoutItem.article]));
-    assert.equal(await $("exportBtn").getAttribute("href"), null);
+    assert.equal(await $("exportBtn").getAttribute("href"), withoutItemURL);
 
     // Single and selected-row edits must update the actual downloaded workbook.
+    await $("clearRecordsBtn").click();
     await $("studentInput").fill(students.slice(0, 3).map(student => student.female).concat("不存在的測試學生").join(","));
     await choose(withoutItem.article, withoutItem.clause);
     await $("previewBtn").click();
@@ -299,6 +308,42 @@ async function main() {
     await text("selectedCount", /0 \/ 3/);
     await disabled("editSelectedBtn");
 
+    // A new batch keeps earlier edits and selection, including repeat students.
+    await page.locator("#previewBody .row-select").nth(1).check();
+    const beforeAppend = await $("exportBtn").getAttribute("href");
+    await $("studentInput").fill([students[0].team, students[0].name, students[1].female].join(","));
+    await choose(withItem.article, withItem.clause, withItem.item);
+    const secondBatchReason = "接續新增第二批，保留原有編輯內容。";
+    await $("reason").fill(secondBatchReason);
+    await $("amount").selectOption(singleAmount);
+    assert.equal(await $("exportBtn").getAttribute("href"), beforeAppend);
+    assert.equal(await page.locator("#previewBody tr").count(), 3);
+    await $("previewBtn").click();
+    await text("resultStatus", /已新增 3 筆.*目前共 6 筆/);
+    await text("selectedCount", /1 \/ 6/);
+    assert.equal(await page.locator("#previewBody .row-select").nth(1).isChecked(), true);
+    assert.equal(await page.locator("#previewBody .row-select").nth(3).isChecked(), false);
+    const appended = [students[0], students[0], students[1]].map(student => ({school: student.school, name: student.name,
+      ...withItem, reason: secondBatchReason, amount: singleAmount, adjustReason: "", adjustAmount: ""}));
+    await checkDownload({count: 6, rows: [firstAdjusted, untouched, third, ...appended]});
+    await text("duplicateStatus", /共 3 筆，重複 2 次/);
+    await text("duplicateStatus", /共 2 筆，重複 1 次/);
+    await editRow(3);
+    await $("editReason").fill("只修改其中一筆重複紀錄。");
+    await $("saveEditBtn").click();
+    appended[0].reason = "只修改其中一筆重複紀錄。";
+    await checkDownload({count: 6, rows: [firstAdjusted, untouched, third, ...appended]});
+    for (const index of [5, 4, 3]) await page.locator("#previewBody .delete-row").nth(index).click();
+    assert.equal(await $("duplicateStatus").isVisible(), false);
+    await text("selectedCount", /1 \/ 3/);
+    await checkDownload({count: 3, rows: [firstAdjusted, untouched, third]});
+    await $("selectAll").check();
+    await $("selectAll").uncheck();
+    await $("studentInput").fill(students.slice(0, 3).map(student => student.female).concat("不存在的測試學生").join(","));
+    await choose(withoutItem.article, withoutItem.clause);
+    // Only the upper draft changed; the previously edited preview remains.
+    assert.equal(await cell(0, "reason").innerText(), firstAdjusted.reason);
+
     // Deleting a row remaps selection to the same students and rebuilds Excel.
     const formState = () => page.evaluate(() => Object.fromEntries(
       ["studentInput", "article", "clause", "item", "reason", "amount", "adjustReason", "adjustAmount"]
@@ -315,6 +360,7 @@ async function main() {
       assert.deepEqual(await formState(), beforeRemoval);
       assert.equal(await $("importStatus").innerText(), importState);
       assert.equal(await $("previewBtn").isEnabled(), true);
+      assert.equal(await $("duplicateStatus").isVisible(), false);
     };
     assert.equal(await page.locator("#previewBody .edit-row").count(), 3);
     assert.equal(await page.locator("#previewBody .delete-row").count(), 3);
@@ -322,7 +368,6 @@ async function main() {
     await page.locator("#previewBody .row-select").nth(2).check();
     await removeRow(1);
     await text("resultStatus", /已刪除 1 筆.*共 2 筆/);
-    await text("resultStatus", /已略過 1 筆/);
     await text("selectedCount", /2 \/ 2/);
     assert.equal(await $("selectAll").isChecked(), true);
     assert.equal(await cell(1, "school").innerText(), students[2].school);
@@ -393,23 +438,45 @@ async function main() {
     await $("studentInput").fill(students[0].female);
     await choose(withoutItem.article, withoutItem.clause);
     await $("previewBtn").click();
-    await text("resultStatus", /成功建立 1 筆/);
+    await text("resultStatus", /已新增 1 筆/);
+    const firstMain = {school: students[0].school, name: students[0].name, ...withoutItem,
+      amount: template.defaultAmounts[withoutItem.article], adjustReason: "", adjustAmount: ""};
+    const mainBeforeChange = await $("exportBtn").getAttribute("href");
     const mainReason = "共同獎懲事由帶入後自行修改。\n這一行也應保留。";
     await $("reason").fill(mainReason);
-    assert.equal(await $("exportBtn").getAttribute("href"), null);
+    assert.equal(await $("exportBtn").getAttribute("href"), mainBeforeChange);
     await $("amount").selectOption(singleAmount);
     await $("adjustReason").selectOption(template.adjustmentOptions[0]);
     await $("adjustAmount").selectOption(template.amountOptions[0]);
     assert.equal(await $("reason").inputValue(), mainReason);
     await $("previewBtn").click();
-    await checkDownload({count: 1, fields: {...withoutItem, reason: mainReason, amount: singleAmount, adjustReason: template.adjustmentOptions[0], adjustAmount: template.amountOptions[0]}});
+    const secondMain = {...firstMain, reason: mainReason, amount: singleAmount,
+      adjustReason: template.adjustmentOptions[0], adjustAmount: template.amountOptions[0]};
+    await checkDownload({count: 2, rows: [firstMain, secondMain]});
+    const beforeBlank = await $("exportBtn").getAttribute("href");
     await $("reason").fill("  ");
     await $("previewBtn").click();
     await text("resultStatus", /填寫獎懲事由/);
-    assert.equal(await $("exportBtn").getAttribute("href"), null);
+    assert.equal(await $("exportBtn").getAttribute("href"), beforeBlank);
+    assert.equal(await page.locator("#previewBody tr").count(), 2);
     await choose(withItem.article, withItem.clause, withItem.item);
     assert.equal(await $("reason").inputValue(), withItem.reason);
     await $("previewBtn").click();
+    const thirdMain = {...firstMain, ...withItem, amount: template.defaultAmounts[withItem.article]};
+    await checkDownload({count: 3, rows: [firstMain, secondMain, thirdMain]});
+    await text("duplicateStatus", /共 3 筆，重複 2 次/);
+    const beforeClearInput = await $("exportBtn").getAttribute("href");
+    await $("clearBtn").click();
+    assert.equal(await $("studentInput").inputValue(), "");
+    assert.equal(await $("exportBtn").getAttribute("href"), beforeClearInput);
+    assert.equal(await page.locator("#previewBody tr").count(), 3);
+    await $("previewBtn").click();
+    await text("resultStatus", /請輸入學生/);
+    assert.equal(await $("exportBtn").getAttribute("href"), beforeClearInput);
+    await checkDownload({count: 3, rows: [firstMain, secondMain, thirdMain]});
+    await $("clearRecordsBtn").click();
+    assert.equal(await $("duplicateStatus").isVisible(), false);
+    assert.equal(await $("exportBtn").getAttribute("href"), null);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     assert.deepEqual(errors, [], "Browser Console must be clean");
     assert.deepEqual(nonLocalRequests, [], "No external CDN or data requests");
@@ -422,7 +489,7 @@ async function main() {
       assert.match(await brokenPage.locator("#startupStatus").innerText(), /Excel 元件未完整載入/);
       assert.equal(await brokenPage.locator("#previewBtn").isDisabled(), true);
     } finally { await brokenContext.close(); }
-    console.log(JSON.stringify({engine, mobile: "iPhone 13", rosterCount: students.length, rulesCheckedInDOM: template.rules.length, editorRulesChecked: template.rules.length, exportedDownloads: downloadsChecked, customReasonsPreserved: true, singleAndBatchEditsSynced: true, deletionsSynced: true, selectionPreservedAfterDeletion: true, clearKeepsImportsAndForm: true, partialMatchExport: true, consoleErrors: errors.length, externalRequests: nonLocalRequests.length, uploadRequests: writes.length, missingLibraryHandled: true, result: "PASS"}));
+    console.log(JSON.stringify({engine, mobile: "iPhone 13", rosterCount: students.length, rulesCheckedInDOM: template.rules.length, editorRulesChecked: template.rules.length, exportedDownloads: downloadsChecked, batchesAppendWithEditsPreserved: true, repeatsKeptInExports: true, duplicateCountsInRed: true, failedBatchPreservesExport: true, clearInputPreservesRecords: true, customReasonsPreserved: true, singleAndBatchEditsSynced: true, deletionsSynced: true, selectionPreservedAfterDeletion: true, clearKeepsImportsAndForm: true, partialMatchExport: true, consoleErrors: errors.length, externalRequests: nonLocalRequests.length, uploadRequests: writes.length, missingLibraryHandled: true, result: "PASS"}));
   } finally { await browser.close(); if (server) await new Promise(resolve => server.close(resolve)); }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

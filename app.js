@@ -10,7 +10,7 @@
 
   let roster = [], template = null, output = [], downloadURL = null;
   const selectedRows = new Set();
-  let editingRows = [], previewSummary = {duplicates: 0, skipped: 0};
+  let editingRows = [], previewSummary = {skipped: 0};
   const versions = {roster: 0, template: 0};
   const imports = {roster: "尚未匯入學生名冊", template: "尚未匯入獎懲範本"};
   const status = (id, message, kind) => {
@@ -27,17 +27,18 @@
   function invalidatePreview(message) {
     output = [];
     selectedRows.clear();
-    previewSummary = {duplicates: 0, skipped: 0};
+    previewSummary = {skipped: 0};
     if ($("recordEditor").open) $("recordEditor").close();
     editingRows = [];
     $("previewBody").replaceChildren();
+    updateDuplicates();
     updateSelection();
     $("exportBtn").removeAttribute("href");
     $("exportBtn").setAttribute("aria-disabled", "true");
     $("exportBtn").tabIndex = -1;
     if (downloadURL) URL.revokeObjectURL(downloadURL);
     downloadURL = null;
-    status("resultStatus", message || "資料已變更，請重新產生紀錄預覽。");
+    status("resultStatus", message || "匯入資料已變更，請重新批次新增紀錄。");
   }
 
   function refreshImports() {
@@ -101,7 +102,7 @@
       resolved.matches.forEach(({student, count}) => {
         const row = document.createElement("div");
         row.className = "student-row" + (count > 1 ? " error" : "");
-        row.textContent = student.name + (count > 1 ? "｜重複 " + count + " 次（只產生 1 筆）" : "｜辨識成功") +
+        row.textContent = student.name + (count > 1 ? "｜本批共 " + count + " 筆（重複 " + (count - 1) + " 次，全部新增）" : "｜辨識成功") +
           "\n女生隊號：" + (student.female || "—") + "　建制隊號：" + (student.team || "—") + "　學籍號碼：" + student.school;
         panel.appendChild(row);
       });
@@ -198,6 +199,14 @@
     $("selectAll").indeterminate = selectedRows.size > 0 && selectedRows.size < output.length;
   }
 
+  function updateDuplicates() {
+    const duplicates = core.duplicateStudents(output);
+    $("duplicateStatus").hidden = !duplicates.length;
+    $("duplicateStatus").textContent = duplicates.length ? "重複學生提醒（各筆均會保留及匯出）\n" +
+      duplicates.map(student => student.name + "（學號 " + student.school + "）：共 " + student.count +
+        " 筆，重複 " + (student.count - 1) + " 次。").join("\n") : "";
+  }
+
   function renderOutput() {
     $("previewBody").replaceChildren();
     output.forEach((record, index) => {
@@ -244,6 +253,7 @@
       $("previewBody").appendChild(row);
     });
     updateSelection();
+    updateDuplicates();
   }
 
   function replaceOutput(records, selectionIndexes) {
@@ -272,7 +282,7 @@
     if (!output[index]) return;
     const records = output.filter((record, rowIndex) => rowIndex !== index);
     if (!records.length) {
-      invalidatePreview("已刪除最後一筆紀錄；可重新產生紀錄預覽。");
+      invalidatePreview("已刪除最後一筆紀錄；可再次批次新增。");
       return;
     }
     const selectionIndexes = Array.from(selectedRows)
@@ -287,10 +297,9 @@
   }
 
   function reportOutput(message) {
-    const {duplicates, skipped} = previewSummary;
-    status("resultStatus", message +
-      (duplicates ? "；" + duplicates + " 位重複學生已各保留 1 筆。" : "。") +
-      (skipped ? "\n已略過 " + skipped + " 筆無法辨識的輸入（詳見上方紅字）；其餘學生可正常匯出。" : ""), skipped ? "warning" : "ok");
+    const {skipped} = previewSummary;
+    status("resultStatus", message + "。" +
+      (skipped ? "\n上次新增時已略過 " + skipped + " 筆無法辨識的輸入；有效學生紀錄已保留，可正常匯出。" : ""), skipped ? "warning" : "ok");
   }
 
   function syncEditor() {
@@ -379,33 +388,26 @@
   }
 
   function preview() {
-    invalidatePreview();
     try {
       const result = core.buildRecords($("studentInput").value, roster, template, selection());
-      replaceOutput(result.records);
-      previewSummary = {duplicates: result.resolved.matches.filter(match => match.count > 1).length, skipped: result.resolved.errors.length};
-      reportOutput("成功建立 " + output.length + " 筆紀錄");
+      replaceOutput(output.concat(result.records));
+      previewSummary = {skipped: result.resolved.errors.length};
+      reportOutput("已新增 " + result.records.length + " 筆紀錄；目前共 " + output.length + " 筆，可直接匯出");
     } catch (error) {
-      invalidatePreview(error.message);
-      $("resultStatus").classList.add("error");
+      status("resultStatus", "新增失敗：" + error.message +
+        (output.length ? "\n原有 " + output.length + " 筆紀錄已保留，可繼續匯出。" : ""), "error");
     }
   }
 
   $("rosterFile").addEventListener("change", event => { importFile("roster", event.target); });
   $("templateFile").addEventListener("change", event => { importFile("template", event.target); });
-  $("studentInput").addEventListener("input", () => { invalidatePreview(); checkStudents(); });
-  $("reason").addEventListener("input", () => invalidatePreview());
+  $("studentInput").addEventListener("input", checkStudents);
   [["article", updateClause], ["clause", updateItem], ["item", syncRuleDetails]].forEach(([id, handler]) => {
-    $(id).addEventListener("change", () => { invalidatePreview(); handler(); });
+    $(id).addEventListener("change", handler);
   });
-  ["amount", "adjustReason", "adjustAmount"].forEach(id => {
-    $(id).addEventListener("change", () => {
-      invalidatePreview();
-      if (id === "adjustReason") {
-        $("adjustAmount").disabled = !$(id).value;
-        if (!$(id).value) $("adjustAmount").value = "";
-      }
-    });
+  $("adjustReason").addEventListener("change", () => {
+    $("adjustAmount").disabled = !$("adjustReason").value;
+    if (!$("adjustReason").value) $("adjustAmount").value = "";
   });
   $("previewBtn").addEventListener("click", preview);
   $("selectAll").addEventListener("change", () => {
@@ -415,7 +417,7 @@
   });
   $("editSelectedBtn").addEventListener("click", () => openEditor(Array.from(selectedRows).sort((a, b) => a - b)));
   $("clearRecordsBtn").addEventListener("click", () => {
-    invalidatePreview("已清空預覽紀錄；可重新產生紀錄預覽。");
+    invalidatePreview("已清空預覽紀錄；可再次批次新增。");
   });
   $("editArticle").addEventListener("change", () => {
     fillEditClauses();
@@ -438,7 +440,8 @@
     $("studentInput").value = "";
     resetRuleControls();
     checkStudents();
-    invalidatePreview("已清除輸入；匯入的名冊與範本仍可使用。");
+    if (output.length) reportOutput("已清除上方輸入；原有 " + output.length + " 筆預覽紀錄保留，可直接匯出");
+    else status("resultStatus", "已清除輸入；匯入的名冊與範本仍可使用。");
   });
   resetRuleControls();
   updateSelection();
