@@ -70,8 +70,8 @@ async function main() {
       const data = xlsx.utils.sheet_to_json(workbook.Sheets[template.sheetName], {header: 1, defval: "", raw: false});
       assert.deepEqual(data[0], template.headers);
       assert.equal(data.length - 1, expected.count);
-      assert.equal(data[1][0], students[0].school);
-      assert.equal(data[1][1], students[0].name);
+      assert.equal(data[1][0], expected.rows?.[0]?.school || students[0].school);
+      assert.equal(data[1][1], expected.rows?.[0]?.name || students[0].name);
       for (const [field, value] of Object.entries(expected.fields || {})) assert.equal(data[1][template.fields.indexOf(field)], value);
       (expected.rows || []).forEach((row, index) => {
         for (const [field, value] of Object.entries(row)) assert.equal(data[index + 1][template.fields.indexOf(field)], value);
@@ -85,6 +85,7 @@ async function main() {
     await page.waitForFunction(() => document.documentElement.dataset.appReady === "true");
     await text("startupStatus", /已就緒/);
     await disabled("previewBtn");
+    await disabled("clearRecordsBtn");
     await load("rosterFile", rosterPath, "rosterStatus");
     await text("rosterStatus", new RegExp("姓名查詢.*" + students.length));
     await load("templateFile", templatePath, "templateStatus");
@@ -297,6 +298,74 @@ async function main() {
     await $("selectAll").uncheck();
     await text("selectedCount", /0 \/ 3/);
     await disabled("editSelectedBtn");
+
+    // Deleting a row remaps selection to the same students and rebuilds Excel.
+    const formState = () => page.evaluate(() => Object.fromEntries(
+      ["studentInput", "article", "clause", "item", "reason", "amount", "adjustReason", "adjustAmount"]
+        .map(id => [id, document.getElementById(id).value])));
+    const beforeRemoval = await formState();
+    const importState = await $("importStatus").innerText();
+    const removeRow = index => page.locator("#previewBody .delete-row").nth(index).click();
+    const assertEmptyPreview = async () => {
+      assert.equal(await page.locator("#previewBody tr").count(), 0);
+      assert.equal(await $("exportBtn").getAttribute("href"), null);
+      assert.equal(await $("exportBtn").getAttribute("aria-disabled"), "true");
+      await text("selectedCount", /0 \/ 0/);
+      for (const id of ["selectAll", "editSelectedBtn", "clearRecordsBtn"]) await disabled(id);
+      assert.deepEqual(await formState(), beforeRemoval);
+      assert.equal(await $("importStatus").innerText(), importState);
+      assert.equal(await $("previewBtn").isEnabled(), true);
+    };
+    assert.equal(await page.locator("#previewBody .edit-row").count(), 3);
+    assert.equal(await page.locator("#previewBody .delete-row").count(), 3);
+    await page.locator("#previewBody .row-select").nth(0).check();
+    await page.locator("#previewBody .row-select").nth(2).check();
+    await removeRow(1);
+    await text("resultStatus", /已刪除 1 筆.*共 2 筆/);
+    await text("resultStatus", /已略過 1 筆/);
+    await text("selectedCount", /2 \/ 2/);
+    assert.equal(await $("selectAll").isChecked(), true);
+    assert.equal(await cell(1, "school").innerText(), students[2].school);
+    await checkDownload({count: 2, rows: [firstAdjusted, third]});
+    await page.locator("#previewBody .row-select").nth(0).uncheck();
+    await $("editSelectedBtn").click();
+    await $("editReason").fill("刪除其他列後，仍編輯原本勾選的學生。");
+    await $("saveEditBtn").click();
+    third.reason = "刪除其他列後，仍編輯原本勾選的學生。";
+    assert.equal(await cell(0, "reason").innerText(), firstAdjusted.reason);
+    await checkDownload({count: 2, rows: [firstAdjusted, third]});
+    await removeRow(1);
+    await text("selectedCount", /0 \/ 1/);
+    await disabled("editSelectedBtn");
+    await checkDownload({count: 1, rows: [firstAdjusted]});
+    await $("clearRecordsBtn").click();
+    await text("resultStatus", /已清空預覽紀錄/);
+    await assertEmptyPreview();
+
+    // Clearing all selected records keeps the imports and common form reusable.
+    await $("previewBtn").click();
+    const originalRecords = students.slice(0, 3).map(student => ({school: student.school, name: student.name,
+      ...withoutItem, amount: baseAmount, adjustReason: "", adjustAmount: ""}));
+    await checkDownload({count: 3, rows: originalRecords});
+    await $("selectAll").check();
+    await $("clearRecordsBtn").click();
+    await assertEmptyPreview();
+    await $("previewBtn").click();
+    await page.locator("#previewBody .row-select").nth(1).check();
+    await removeRow(0);
+    await text("selectedCount", /1 \/ 2/);
+    assert.equal(await page.locator("#previewBody .row-select").nth(0).isChecked(), true);
+    assert.equal(await page.locator("#previewBody .row-select").nth(1).isChecked(), false);
+    await checkDownload({count: 2, rows: originalRecords.slice(1)});
+    await editRow(0);
+    assert.equal(await $("editReason").inputValue(), withoutItem.reason);
+    await $("cancelEditBtn").click();
+    await removeRow(1);
+    await text("selectedCount", /1 \/ 1/);
+    await checkDownload({count: 1, rows: [originalRecords[1]]});
+    await removeRow(0);
+    await text("resultStatus", /已刪除最後一筆/);
+    await assertEmptyPreview();
     await $("studentInput").fill(students[0].female);
     await text("selectedCount", /0 \/ 0/);
     await disabled("selectAll");
@@ -353,7 +422,7 @@ async function main() {
       assert.match(await brokenPage.locator("#startupStatus").innerText(), /Excel 元件未完整載入/);
       assert.equal(await brokenPage.locator("#previewBtn").isDisabled(), true);
     } finally { await brokenContext.close(); }
-    console.log(JSON.stringify({engine, mobile: "iPhone 13", rosterCount: students.length, rulesCheckedInDOM: template.rules.length, editorRulesChecked: template.rules.length, exportedDownloads: downloadsChecked, customReasonsPreserved: true, singleAndBatchEditsSynced: true, partialMatchExport: true, consoleErrors: errors.length, externalRequests: nonLocalRequests.length, uploadRequests: writes.length, missingLibraryHandled: true, result: "PASS"}));
+    console.log(JSON.stringify({engine, mobile: "iPhone 13", rosterCount: students.length, rulesCheckedInDOM: template.rules.length, editorRulesChecked: template.rules.length, exportedDownloads: downloadsChecked, customReasonsPreserved: true, singleAndBatchEditsSynced: true, deletionsSynced: true, selectionPreservedAfterDeletion: true, clearKeepsImportsAndForm: true, partialMatchExport: true, consoleErrors: errors.length, externalRequests: nonLocalRequests.length, uploadRequests: writes.length, missingLibraryHandled: true, result: "PASS"}));
   } finally { await browser.close(); if (server) await new Promise(resolve => server.close(resolve)); }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

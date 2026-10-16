@@ -21,6 +21,7 @@ input,select,textarea{width:100%;padding:10px;border:1px solid #b8c7d9;border-ra
 textarea{min-height:95px}
 button,.button{display:inline-block;min-height:44px;text-decoration:none;border:0;border-radius:8px;padding:11px 18px;background:#285a96;color:white;cursor:pointer}
 button.secondary{background:#e7edf6;color:#244b80}
+button.danger{background:#fff0ee;color:#b42318}
 button:disabled,.button[aria-disabled="true"]{opacity:.5;cursor:not-allowed}
 .status,.student-row{white-space:pre-wrap;overflow-wrap:anywhere}
 .student-row{padding:9px 0;border-bottom:1px solid #dce4ef}
@@ -42,6 +43,8 @@ th{background:#eef3f9}
 input[type="checkbox"]{width:22px;height:22px;padding:0;vertical-align:middle;accent-color:#285a96;flex-shrink:0}
 .check-label{display:inline-flex;align-items:center;gap:8px;min-height:44px;margin:0;font-weight:500}
 .selection-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:12px 0}
+.row-actions{display:flex;gap:8px}
+@media(max-width:650px){.row-actions{flex-direction:column}}
 dialog{width:min(620px,calc(100% - 24px));max-height:85vh;max-height:85dvh;border:1px solid #b8c7d9;border-radius:14px;padding:20px;overflow:auto;color:#24324a}
 dialog::backdrop{background:#10213d80}
 .edit-group{margin:14px 0;padding:12px;border:1px solid #dce4ef;border-radius:8px}
@@ -107,11 +110,11 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 <span id="selectedCount" role="status">已選取 0 筆</span>
 <button id="editSelectedBtn" disabled>編輯已選取</button>
 </div>
-<p class="note">點每列「編輯」可修改單筆；核取多筆後，點「編輯已選取」可一次修改共同欄位。儲存後，匯出檔會同步更新。</p>
+<p class="note">每列可「編輯」或「刪除」單筆；核取多筆後，點「編輯已選取」可一次修改共同欄位。修改與刪除會同步更新匯出檔。「清空紀錄」會清除全部預覽紀錄，保留已匯入資料與上方輸入內容。</p>
 <div class="tablewrap">
 <table>
 <thead><tr>
-<th><label class="check-label"><input type="checkbox" id="selectAll" disabled>全選</label></th><th>編輯</th>
+<th><label class="check-label"><input type="checkbox" id="selectAll" disabled>全選</label></th><th>操作</th>
 <th>學號</th><th>姓名</th><th>條</th><th>款</th><th>目</th><th>獎懲事由</th><th>額度</th><th>加重減輕事由</th><th>加重減輕額度</th>
 </tr></thead>
 <tbody id="previewBody"></tbody>
@@ -119,9 +122,10 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 </div>
 <div class="actions">
 <a id="exportBtn" class="button" role="button" aria-disabled="true" tabindex="-1">匯出 Excel</a>
+<button id="clearRecordsBtn" type="button" class="danger" disabled>清空紀錄</button>
 </div>
 </section>
-<p class="note">版本 2026.10.16.4。匯入資料僅保留於此頁，重新整理後請重新選取檔案。</p>
+<p class="note">版本 2026.10.16.5。匯入資料僅保留於此頁，重新整理後請重新選取檔案。</p>
 </main>
 
 <dialog id="recordEditor" aria-labelledby="editTitle">
@@ -178,7 +182,7 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 })();
 </script>
 <script defer src="./vendor/xlsx.full.min.js?v=0.20.3"></script>
-<script defer src="./app-core.js?v=20261016-4"></script>
-<script defer src="./app.js?v=20261016-4"></script>
+<script defer src="./app-core.js?v=20261016-5"></script>
+<script defer src="./app.js?v=20261016-5"></script>
 </body>
 </html>

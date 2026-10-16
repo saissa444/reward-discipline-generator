@@ -192,6 +192,7 @@
   function updateSelection() {
     $("selectedCount").textContent = "已選取 " + selectedRows.size + " / " + output.length + " 筆";
     $("editSelectedBtn").disabled = !selectedRows.size;
+    $("clearRecordsBtn").disabled = !output.length;
     $("selectAll").disabled = !output.length;
     $("selectAll").checked = output.length > 0 && selectedRows.size === output.length;
     $("selectAll").indeterminate = selectedRows.size > 0 && selectedRows.size < output.length;
@@ -217,12 +218,22 @@
       selectedCell.appendChild(label);
       row.appendChild(selectedCell);
       const actionCell = document.createElement("td");
+      const actions = document.createElement("div");
+      actions.className = "row-actions";
       const edit = document.createElement("button");
+      edit.type = "button";
       edit.className = "secondary edit-row";
       edit.textContent = "編輯";
       edit.setAttribute("aria-label", "編輯 " + record.name + "（" + record.school + "）");
       edit.addEventListener("click", () => openEditor([index]));
-      actionCell.appendChild(edit);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "danger delete-row";
+      remove.textContent = "刪除";
+      remove.setAttribute("aria-label", "刪除 " + record.name + "（" + record.school + "）");
+      remove.addEventListener("click", () => deleteRecord(index));
+      actions.append(edit, remove);
+      actionCell.appendChild(actions);
       row.appendChild(actionCell);
       core.fields.forEach(field => {
         const cell = document.createElement("td");
@@ -235,7 +246,7 @@
     updateSelection();
   }
 
-  function replaceOutput(records) {
+  function replaceOutput(records, selectionIndexes) {
     // Create the next download before changing the visible records or old URL.
     const workbook = core.exportWorkbook(records, template, xlsx);
     const bytes = xlsx.write(workbook, {bookType: "xlsx", type: "array"});
@@ -243,6 +254,10 @@
     const previousURL = downloadURL;
     output = records;
     downloadURL = nextURL;
+    if (selectionIndexes) {
+      selectedRows.clear();
+      selectionIndexes.forEach(index => selectedRows.add(index));
+    }
     const now = new Date();
     const stamp = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0")].join("");
     $("exportBtn").href = downloadURL;
@@ -251,6 +266,24 @@
     $("exportBtn").tabIndex = 0;
     renderOutput();
     if (previousURL) URL.revokeObjectURL(previousURL);
+  }
+
+  function deleteRecord(index) {
+    if (!output[index]) return;
+    const records = output.filter((record, rowIndex) => rowIndex !== index);
+    if (!records.length) {
+      invalidatePreview("已刪除最後一筆紀錄；可重新產生紀錄預覽。");
+      return;
+    }
+    const selectionIndexes = Array.from(selectedRows)
+      .filter(rowIndex => rowIndex !== index)
+      .map(rowIndex => rowIndex > index ? rowIndex - 1 : rowIndex);
+    try {
+      replaceOutput(records, selectionIndexes);
+      reportOutput("已刪除 1 筆紀錄；目前共 " + output.length + " 筆，可直接匯出");
+    } catch (error) {
+      status("resultStatus", "刪除失敗：" + error.message, "error");
+    }
   }
 
   function reportOutput(message) {
@@ -381,6 +414,9 @@
     renderOutput();
   });
   $("editSelectedBtn").addEventListener("click", () => openEditor(Array.from(selectedRows).sort((a, b) => a - b)));
+  $("clearRecordsBtn").addEventListener("click", () => {
+    invalidatePreview("已清空預覽紀錄；可重新產生紀錄預覽。");
+  });
   $("editArticle").addEventListener("change", () => {
     fillEditClauses();
     if ($("editApplyAmount").checked) $("editAmount").value = template.defaultAmounts[$("editArticle").value] || "";
