@@ -19,7 +19,7 @@ label{display:block;font-weight:600;margin:12px 0 6px}
 input,select,textarea,button{font:inherit}
 input,select,textarea{width:100%;padding:10px;border:1px solid #b8c7d9;border-radius:8px;background:white}
 textarea{min-height:95px}
-button,.button{display:inline-block;text-decoration:none;border:0;border-radius:8px;padding:11px 18px;background:#285a96;color:white;cursor:pointer}
+button,.button{display:inline-block;min-height:44px;text-decoration:none;border:0;border-radius:8px;padding:11px 18px;background:#285a96;color:white;cursor:pointer}
 button.secondary{background:#e7edf6;color:#244b80}
 button:disabled,.button[aria-disabled="true"]{opacity:.5;cursor:not-allowed}
 .status,.student-row{white-space:pre-wrap;overflow-wrap:anywhere}
@@ -38,6 +38,14 @@ table{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
 th,td{border:1px solid #dce4ef;padding:9px;text-align:left}
 th{background:#eef3f9}
 .badge{display:inline-block;background:#e7edf6;padding:4px 9px;border-radius:6px}
+input[type="checkbox"]{width:22px;height:22px;padding:0;vertical-align:middle;accent-color:#285a96;flex-shrink:0}
+.check-label{display:inline-flex;align-items:center;gap:8px;min-height:44px;margin:0;font-weight:500}
+.selection-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:12px 0}
+dialog{width:min(620px,calc(100% - 24px));max-height:85vh;max-height:85dvh;border:1px solid #b8c7d9;border-radius:14px;padding:20px;overflow:auto;color:#24324a}
+dialog::backdrop{background:#10213d80}
+.edit-group{margin:14px 0;padding:12px;border:1px solid #dce4ef;border-radius:8px}
+.edit-group>label:first-child{font-weight:700}
+dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;margin-bottom:-12px;border-top:1px solid #dce4ef}
 </style>
 </head>
 <body>
@@ -94,9 +102,15 @@ th{background:#eef3f9}
 <section>
 <h2>④ 預覽與匯出</h2>
 <div id="resultStatus" role="status" class="status">尚未產生紀錄</div>
+<div class="selection-bar">
+<span id="selectedCount" role="status">已選取 0 筆</span>
+<button id="editSelectedBtn" disabled>編輯已選取</button>
+</div>
+<p class="note">點每列「編輯」可修改單筆；核取多筆後，點「編輯已選取」可一次修改共同欄位。儲存後，匯出檔會同步更新。</p>
 <div class="tablewrap">
 <table>
 <thead><tr>
+<th><label class="check-label"><input type="checkbox" id="selectAll" disabled>全選</label></th><th>編輯</th>
 <th>學號</th><th>姓名</th><th>條</th><th>款</th><th>目</th><th>獎懲事由</th><th>額度</th><th>加重減輕事由</th><th>加重減輕額度</th>
 </tr></thead>
 <tbody id="previewBody"></tbody>
@@ -106,8 +120,35 @@ th{background:#eef3f9}
 <a id="exportBtn" class="button" role="button" aria-disabled="true" tabindex="-1">匯出 Excel</a>
 </div>
 </section>
-<p class="note">版本 2026.10.16.2。匯入資料僅保留於此頁，重新整理後請重新選取檔案。</p>
+<p class="note">版本 2026.10.16.3。匯入資料僅保留於此頁，重新整理後請重新選取檔案。</p>
 </main>
+
+<dialog id="recordEditor" aria-labelledby="editTitle">
+<form id="recordEditForm">
+<h2 id="editTitle">編輯紀錄</h2>
+<p id="editStudentSummary" class="note"></p>
+<p class="note">只套用勾選的欄位，其餘保留原值。學生資料依名冊顯示；獎懲事由依所選條款目自動帶入。</p>
+<div class="edit-group">
+<label class="check-label"><input type="checkbox" id="editApplyRule">修改獎懲依據與事由</label>
+<label for="editArticle">獎懲依據（條）</label><select id="editArticle"></select>
+<label for="editClause">獎懲依據（款）</label><select id="editClause"></select>
+<label for="editItem">獎懲依據（目）</label><select id="editItem"></select>
+<label for="editReason">獎懲事由（自動帶入）</label><textarea id="editReason" readonly></textarea>
+</div>
+<div class="edit-group">
+<label class="check-label" for="editApplyAmount"><input type="checkbox" id="editApplyAmount">修改額度</label>
+<label for="editAmount">額度</label><select id="editAmount"></select>
+</div>
+<div class="edit-group">
+<label class="check-label"><input type="checkbox" id="editApplyAdjust">修改加重減輕事由與額度</label>
+<label for="editAdjustReason">加重減輕事由（選填）</label><select id="editAdjustReason"></select>
+<label for="editAdjustAmount">加重減輕額度（選填）</label><select id="editAdjustAmount"></select>
+<p class="note">選「無」可清除加重減輕內容。</p>
+</div>
+<p id="editStatus" role="status"></p>
+<div class="actions"><button id="saveEditBtn" type="submit">儲存修改</button><button id="cancelEditBtn" class="secondary" type="button">取消</button></div>
+</form>
+</dialog>
 
 <script>
 (function () {
@@ -132,7 +173,7 @@ th{background:#eef3f9}
 })();
 </script>
 <script defer src="./vendor/xlsx.full.min.js?v=0.20.3"></script>
-<script defer src="./app-core.js?v=20261016-2"></script>
-<script defer src="./app.js?v=20261016-2"></script>
+<script defer src="./app-core.js?v=20261016-3"></script>
+<script defer src="./app.js?v=20261016-3"></script>
 </body>
 </html>

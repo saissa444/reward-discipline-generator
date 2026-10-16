@@ -56,6 +56,7 @@ async function main() {
     await $("clause").selectOption(clause);
     if (item) await $("item").selectOption(item);
   };
+  let downloadsChecked = 0;
   const checkDownload = async expected => {
     const downloaded = page.waitForEvent("download");
     await $("exportBtn").click();
@@ -72,6 +73,10 @@ async function main() {
       assert.equal(data[1][0], students[0].school);
       assert.equal(data[1][1], students[0].name);
       for (const [field, value] of Object.entries(expected.fields || {})) assert.equal(data[1][template.fields.indexOf(field)], value);
+      (expected.rows || []).forEach((row, index) => {
+        for (const [field, value] of Object.entries(row)) assert.equal(data[index + 1][template.fields.indexOf(field)], value);
+      });
+      downloadsChecked++;
     } finally { fs.rmSync(path.dirname(temporary), {recursive: true, force: true}); }
   };
 
@@ -121,7 +126,7 @@ async function main() {
     await $("previewBtn").click();
     await text("resultStatus", /成功建立 2 筆/);
     assert.equal(await page.locator("#previewBody tr").count(), 2);
-    assert.equal(await page.locator("#previewBody tr:first-child td").count(), 9);
+    assert.equal(await page.locator("#previewBody tr:first-child td[data-field]").count(), 9);
     await checkDownload({count: 2, fields: {...withItem, amount: template.defaultAmounts[withItem.article], adjustReason: template.adjustmentOptions[0], adjustAmount: template.amountOptions[0]}});
 
     // Any changed student or rule invalidates the old downloadable workbook.
@@ -146,6 +151,108 @@ async function main() {
     await checkDownload({count: 1, fields: {...withoutItem, adjustReason: "", adjustAmount: ""}});
     await $("amount").selectOption(template.amountOptions.find(amount => amount !== template.defaultAmounts[withoutItem.article]));
     assert.equal(await $("exportBtn").getAttribute("href"), null);
+
+    // Single and selected-row edits must update the actual downloaded workbook.
+    await $("studentInput").fill(students.slice(0, 3).map(student => student.female).concat("不存在的測試學生").join(","));
+    await choose(withoutItem.article, withoutItem.clause);
+    await $("previewBtn").click();
+    const cell = (index, field) => page.locator("#previewBody tr").nth(index).locator('[data-field="' + field + '"]');
+    const editRow = index => page.locator("#previewBody .edit-row").nth(index).click();
+    const baseAmount = template.defaultAmounts[withoutItem.article];
+    const singleAmount = template.amountOptions.find(amount => amount !== baseAmount);
+    const batchAmount = template.amountOptions.find(amount => amount !== baseAmount && amount !== singleAmount);
+    const initialURL = await $("exportBtn").getAttribute("href");
+    await disabled("editSelectedBtn");
+    await editRow(0);
+    for (const rule of template.rules) {
+      await $("editArticle").selectOption(rule.article);
+      await $("editClause").selectOption(rule.clause);
+      if (rule.item) await $("editItem").selectOption(rule.item);
+      assert.equal(await $("editReason").inputValue(), rule.reason);
+      assert.equal(await $("editAmount").inputValue(), template.defaultAmounts[rule.article]);
+    }
+    await $("cancelEditBtn").click();
+    assert.equal(await $("exportBtn").getAttribute("href"), initialURL);
+    await editRow(0);
+    assert.equal(await $("editArticle").inputValue(), withoutItem.article);
+    assert.equal(await $("editAmount").inputValue(), baseAmount);
+    await $("editAmount").selectOption(singleAmount);
+    await $("editAdjustReason").selectOption(template.adjustmentOptions[0]);
+    await $("editAdjustAmount").selectOption(template.amountOptions[0]);
+    await $("saveEditBtn").click();
+    assert.equal(await $("recordEditor").isVisible(), false);
+    await text("resultStatus", /已略過 1 筆/);
+    assert.equal(await $("resultStatus").getAttribute("class"), "status warning");
+    assert.equal(await cell(0, "amount").innerText(), singleAmount);
+    assert.equal(await cell(1, "amount").innerText(), baseAmount);
+    assert.equal(await cell(2, "amount").innerText(), baseAmount);
+    const firstAdjusted = {school: students[0].school, name: students[0].name, ...withoutItem, amount: singleAmount, adjustReason: template.adjustmentOptions[0], adjustAmount: template.amountOptions[0]};
+    const untouched = {school: students[1].school, name: students[1].name, ...withoutItem, amount: baseAmount, adjustReason: "", adjustAmount: ""};
+    const third = {school: students[2].school, name: students[2].name, ...withoutItem, amount: baseAmount, adjustReason: "", adjustAmount: ""};
+    await checkDownload({count: 3, rows: [firstAdjusted, untouched, third]});
+    const savedURL = await $("exportBtn").getAttribute("href");
+    await editRow(0);
+    await $("editAmount").selectOption(batchAmount);
+    await $("cancelEditBtn").click();
+    assert.equal(await $("exportBtn").getAttribute("href"), savedURL);
+    assert.equal(await cell(0, "amount").innerText(), singleAmount);
+
+    await page.locator("#previewBody .row-select").nth(0).check();
+    await page.locator("#previewBody .row-select").nth(2).check();
+    await text("selectedCount", /2 \/ 3/);
+    assert.equal(await $("selectAll").evaluate(element => element.indeterminate), true);
+    await $("editSelectedBtn").click();
+    for (const id of ["editApplyRule", "editApplyAmount", "editApplyAdjust"]) assert.equal(await $(id).isChecked(), false);
+    await $("saveEditBtn").click();
+    await text("editStatus", /至少一組/);
+    assert.equal(await $("recordEditor").isVisible(), true);
+    await $("editApplyAmount").check();
+    await $("editAmount").selectOption(batchAmount);
+    await $("saveEditBtn").click();
+    await text("resultStatus", /已更新 2 筆/);
+    await text("resultStatus", /已略過 1 筆/);
+    firstAdjusted.amount = batchAmount;
+    third.amount = batchAmount;
+    await checkDownload({count: 3, rows: [firstAdjusted, untouched, third]});
+    assert.equal(await cell(1, "amount").innerText(), baseAmount);
+    assert.equal(await cell(0, "adjustReason").innerText(), template.adjustmentOptions[0]);
+    assert.equal(await cell(2, "adjustReason").innerText(), "");
+
+    // Invalid batch edits and cancellation leave the previous export untouched.
+    const beforeInvalid = await $("exportBtn").getAttribute("href");
+    await $("editSelectedBtn").click();
+    await $("editApplyRule").check();
+    await $("editArticle").selectOption(withItem.article);
+    await $("editClause").selectOption(withItem.clause);
+    await $("saveEditBtn").click();
+    await text("editStatus", /選擇.*目/);
+    assert.equal(await $("recordEditor").isVisible(), true);
+    assert.equal(await $("exportBtn").getAttribute("href"), beforeInvalid);
+    await $("cancelEditBtn").click();
+    await $("editSelectedBtn").click();
+    await $("editApplyRule").check();
+    await $("editArticle").selectOption(withItem.article);
+    await $("editClause").selectOption(withItem.clause);
+    await $("editItem").selectOption(withItem.item);
+    await $("saveEditBtn").click();
+    Object.assign(firstAdjusted, withItem);
+    Object.assign(third, withItem);
+    await checkDownload({count: 3, rows: [firstAdjusted, untouched, third]});
+    await editRow(0);
+    await $("editAdjustReason").selectOption("");
+    await disabled("editAdjustAmount");
+    await $("saveEditBtn").click();
+    firstAdjusted.adjustReason = "";
+    firstAdjusted.adjustAmount = "";
+    await checkDownload({count: 3, rows: [firstAdjusted, untouched, third]});
+    await $("selectAll").check();
+    await text("selectedCount", /3 \/ 3/);
+    await $("selectAll").uncheck();
+    await text("selectedCount", /0 \/ 3/);
+    await disabled("editSelectedBtn");
+    await $("studentInput").fill(students[0].female);
+    await text("selectedCount", /0 \/ 0/);
+    await disabled("selectAll");
 
     // Same-file retries, invalid files, opposite import order, and state reset.
     await load("rosterFile", rosterPath, "rosterStatus");
@@ -183,7 +290,7 @@ async function main() {
       assert.match(await brokenPage.locator("#startupStatus").innerText(), /Excel 元件未完整載入/);
       assert.equal(await brokenPage.locator("#previewBtn").isDisabled(), true);
     } finally { await brokenContext.close(); }
-    console.log(JSON.stringify({engine, mobile: "iPhone 13", rosterCount: students.length, rulesCheckedInDOM: template.rules.length, exportedDownloads: 3, partialMatchExport: true, consoleErrors: errors.length, externalRequests: nonLocalRequests.length, uploadRequests: writes.length, missingLibraryHandled: true, result: "PASS"}));
+    console.log(JSON.stringify({engine, mobile: "iPhone 13", rosterCount: students.length, rulesCheckedInDOM: template.rules.length, editorRulesChecked: template.rules.length, exportedDownloads: downloadsChecked, singleAndBatchEditsSynced: true, partialMatchExport: true, consoleErrors: errors.length, externalRequests: nonLocalRequests.length, uploadRequests: writes.length, missingLibraryHandled: true, result: "PASS"}));
   } finally { await browser.close(); if (server) await new Promise(resolve => server.close(resolve)); }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

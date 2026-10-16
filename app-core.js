@@ -142,12 +142,8 @@
     return {tokens, matches: Array.from(matches.values()), errors};
   }
 
-  function buildRecords(value, roster, template, selection) {
-    if (!roster.length) throw new Error("請先匯入學生名冊。");
+  function rewardDetails(template, selection) {
     if (!template) throw new Error("請先匯入獎懲範本。");
-    const resolved = resolveStudents(value, roster);
-    if (!resolved.tokens.length) throw new Error("請輸入學生。");
-    if (!resolved.matches.length) throw new Error("沒有可匯出的學生，請確認上方紅字提示後重新輸入。");
     if (!selection.article || !selection.clause) throw new Error("請依序選擇獎懲依據（條）、（款）。");
     const relevant = template.rules.filter(rule => rule.article === selection.article && rule.clause === selection.clause);
     if (relevant.some(rule => rule.item) && !selection.item) throw new Error("請選擇獎懲依據（目）。");
@@ -157,12 +153,34 @@
     if (selection.adjustReason && !template.adjustmentOptions.includes(selection.adjustReason)) throw new Error("請選擇有效的加重減輕事由。");
     if (selection.adjustAmount && !selection.adjustReason) throw new Error("選擇加重減輕額度前，請先選擇加重減輕事由。");
     if (selection.adjustAmount && !template.amountOptions.includes(selection.adjustAmount)) throw new Error("請選擇有效的加重減輕額度。");
-    const records = resolved.matches.map(({student}) => ({
-      school: student.school, name: student.name, article: rule.article, clause: rule.clause,
+    return {
+      article: rule.article, clause: rule.clause,
       item: rule.item, reason: rule.reason, amount: selection.amount,
       adjustReason: selection.adjustReason || "", adjustAmount: selection.adjustAmount || ""
-    }));
+    };
+  }
+
+  function buildRecords(value, roster, template, selection) {
+    if (!roster.length) throw new Error("請先匯入學生名冊。");
+    if (!template) throw new Error("請先匯入獎懲範本。");
+    const resolved = resolveStudents(value, roster);
+    if (!resolved.tokens.length) throw new Error("請輸入學生。");
+    if (!resolved.matches.length) throw new Error("沒有可匯出的學生，請確認上方紅字提示後重新輸入。");
+    const details = rewardDetails(template, selection);
+    const records = resolved.matches.map(({student}) => Object.assign({school: student.school, name: student.name}, details));
     return {records, resolved};
+  }
+
+  function editRecords(records, indexes, template, patch) {
+    const editable = ["article", "clause", "item", "amount", "adjustReason", "adjustAmount"];
+    if (!Object.keys(patch).length) throw new Error("請勾選至少一組要修改的欄位。");
+    if (Object.keys(patch).some(key => !editable.includes(key))) throw new Error("學生資料依名冊顯示，請修改獎懲欄位。");
+    if (!indexes.length) throw new Error("請先選取要編輯的紀錄。");
+    const selected = new Set(indexes);
+    if (Array.from(selected).some(index => !Number.isInteger(index) || index < 0 || index >= records.length)) throw new Error("選取的紀錄已變更，請重新選取。");
+    // Validate every edited record before returning; a failed batch changes nothing.
+    return records.map((record, index) => selected.has(index) ?
+      Object.assign({}, record, rewardDetails(template, Object.assign({}, record, patch))) : record);
   }
 
   function exportWorkbook(records, template, xlsx) {
@@ -175,5 +193,5 @@
     return workbook;
   }
 
-  return {fields, clean, normalize, extractRoster, extractTemplate, parseTokens, matchStudent, resolveStudents, buildRecords, exportWorkbook};
+  return {fields, clean, normalize, extractRoster, extractTemplate, parseTokens, matchStudent, resolveStudents, buildRecords, editRecords, exportWorkbook};
 });

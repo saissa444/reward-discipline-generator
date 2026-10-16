@@ -9,6 +9,8 @@
   }
 
   let roster = [], template = null, output = [], downloadURL = null;
+  const selectedRows = new Set();
+  let editingRows = [], previewSummary = {duplicates: 0, skipped: 0};
   const versions = {roster: 0, template: 0};
   const imports = {roster: "尚未匯入學生名冊", template: "尚未匯入獎懲範本"};
   const status = (id, message, kind) => {
@@ -24,7 +26,12 @@
 
   function invalidatePreview(message) {
     output = [];
+    selectedRows.clear();
+    previewSummary = {duplicates: 0, skipped: 0};
+    if ($("recordEditor").open) $("recordEditor").close();
+    editingRows = [];
     $("previewBody").replaceChildren();
+    updateSelection();
     $("exportBtn").removeAttribute("href");
     $("exportBtn").setAttribute("aria-disabled", "true");
     $("exportBtn").tabIndex = -1;
@@ -180,34 +187,162 @@
     return Object.fromEntries(["article", "clause", "item", "amount", "adjustReason", "adjustAmount"].map(id => [id, $(id).value]));
   }
 
+  function updateSelection() {
+    $("selectedCount").textContent = "已選取 " + selectedRows.size + " / " + output.length + " 筆";
+    $("editSelectedBtn").disabled = !selectedRows.size;
+    $("selectAll").disabled = !output.length;
+    $("selectAll").checked = output.length > 0 && selectedRows.size === output.length;
+    $("selectAll").indeterminate = selectedRows.size > 0 && selectedRows.size < output.length;
+  }
+
+  function renderOutput() {
+    $("previewBody").replaceChildren();
+    output.forEach((record, index) => {
+      const row = document.createElement("tr");
+      const selectedCell = document.createElement("td");
+      const label = document.createElement("label");
+      label.className = "check-label";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "row-select";
+      checkbox.checked = selectedRows.has(index);
+      checkbox.setAttribute("aria-label", "選取 " + record.name + "（" + record.school + "）");
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) selectedRows.add(index); else selectedRows.delete(index);
+        updateSelection();
+      });
+      label.appendChild(checkbox);
+      selectedCell.appendChild(label);
+      row.appendChild(selectedCell);
+      const actionCell = document.createElement("td");
+      const edit = document.createElement("button");
+      edit.className = "secondary edit-row";
+      edit.textContent = "編輯";
+      edit.setAttribute("aria-label", "編輯 " + record.name + "（" + record.school + "）");
+      edit.addEventListener("click", () => openEditor([index]));
+      actionCell.appendChild(edit);
+      row.appendChild(actionCell);
+      core.fields.forEach(field => {
+        const cell = document.createElement("td");
+        cell.dataset.field = field;
+        cell.textContent = record[field];
+        row.appendChild(cell);
+      });
+      $("previewBody").appendChild(row);
+    });
+    updateSelection();
+  }
+
+  function replaceOutput(records) {
+    // Create the next download before changing the visible records or old URL.
+    const workbook = core.exportWorkbook(records, template, xlsx);
+    const bytes = xlsx.write(workbook, {bookType: "xlsx", type: "array"});
+    const nextURL = URL.createObjectURL(new Blob([bytes], {type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+    const previousURL = downloadURL;
+    output = records;
+    downloadURL = nextURL;
+    const now = new Date();
+    const stamp = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0")].join("");
+    $("exportBtn").href = downloadURL;
+    $("exportBtn").download = "獎懲紀錄_" + stamp + ".xlsx";
+    $("exportBtn").setAttribute("aria-disabled", "false");
+    $("exportBtn").tabIndex = 0;
+    renderOutput();
+    if (previousURL) URL.revokeObjectURL(previousURL);
+  }
+
+  function reportOutput(message) {
+    const {duplicates, skipped} = previewSummary;
+    status("resultStatus", message +
+      (duplicates ? "；" + duplicates + " 位重複學生已各保留 1 筆。" : "。") +
+      (skipped ? "\n已略過 " + skipped + " 筆無法辨識的輸入（詳見上方紅字）；其餘學生可正常匯出。" : ""), skipped ? "warning" : "ok");
+  }
+
+  function syncEditor() {
+    const applyRule = $("editApplyRule").checked;
+    const relevant = template.rules.filter(rule => rule.article === $("editArticle").value && rule.clause === $("editClause").value);
+    const rule = relevant.find(rule => rule.item === $("editItem").value);
+    $("editReason").value = rule ? rule.reason : "";
+    $("editArticle").disabled = !applyRule;
+    $("editClause").disabled = !applyRule || !$("editArticle").value;
+    $("editItem").disabled = !applyRule || !relevant.some(rule => rule.item);
+    $("editReason").disabled = !applyRule;
+    $("editAmount").disabled = !$("editApplyAmount").checked;
+    $("editAdjustReason").disabled = !$("editApplyAdjust").checked;
+    $("editAdjustAmount").disabled = !$("editApplyAdjust").checked || !$("editAdjustReason").value;
+  }
+
+  function fillEditItems(value) {
+    const relevant = template.rules.filter(rule => rule.article === $("editArticle").value && rule.clause === $("editClause").value);
+    const items = Array.from(new Set(relevant.map(rule => rule.item).filter(Boolean)));
+    fillOptions("editItem", items, items.length ? "請選擇目" : relevant.length ? "無目（不需選擇）" : "請先選擇款");
+    $("editItem").value = value || "";
+    syncEditor();
+  }
+
+  function fillEditClauses(clause, item) {
+    const clauses = Array.from(new Set(template.rules.filter(rule => rule.article === $("editArticle").value).map(rule => rule.clause)));
+    fillOptions("editClause", clauses, "請選擇款");
+    $("editClause").value = clause || "";
+    fillEditItems(item);
+  }
+
+  function openEditor(indexes) {
+    if (!output.length || !indexes.length) return;
+    editingRows = indexes.slice();
+    const records = indexes.map(index => output[index]);
+    const common = field => records.every(record => record[field] === records[0][field]) ? records[0][field] : "";
+    const single = indexes.length === 1;
+    $("editTitle").textContent = "編輯 " + indexes.length + " 筆紀錄";
+    $("editStudentSummary").textContent = single ? records[0].name + "（學號 " + records[0].school + "）" :
+      records.slice(0, 5).map(record => record.name).join("、") + (records.length > 5 ? "等 " + records.length + " 位學生" : "");
+    ["editApplyRule", "editApplyAmount", "editApplyAdjust"].forEach(id => { $(id).checked = single; });
+    fillOptions("editArticle", Array.from(new Set(template.rules.map(rule => rule.article))), "請選擇條");
+    $("editArticle").value = common("article");
+    fillOptions("editAmount", template.amountOptions, "請選擇額度");
+    $("editAmount").value = common("amount");
+    fillOptions("editAdjustReason", template.adjustmentOptions, "無（清除）");
+    $("editAdjustReason").value = common("adjustReason");
+    fillOptions("editAdjustAmount", template.amountOptions, "無（選填）");
+    $("editAdjustAmount").value = common("adjustAmount");
+    fillEditClauses(common("clause"), common("item"));
+    $("editStatus").textContent = "";
+    $("editStatus").className = "";
+    $("recordEditor").showModal();
+  }
+
+  function saveEdits(event) {
+    event.preventDefault();
+    try {
+      const patch = {};
+      if ($("editApplyRule").checked) {
+        patch.article = $("editArticle").value;
+        patch.clause = $("editClause").value;
+        patch.item = $("editItem").value;
+      }
+      if ($("editApplyAmount").checked) patch.amount = $("editAmount").value;
+      if ($("editApplyAdjust").checked) {
+        patch.adjustReason = $("editAdjustReason").value;
+        patch.adjustAmount = patch.adjustReason ? $("editAdjustAmount").value : "";
+      }
+      const records = core.editRecords(output, editingRows, template, patch);
+      const count = editingRows.length;
+      replaceOutput(records);
+      $("recordEditor").close();
+      reportOutput("已更新 " + count + " 筆紀錄；目前共 " + output.length + " 筆，可直接匯出");
+    } catch (error) {
+      $("editStatus").textContent = error.message;
+      $("editStatus").className = "error";
+    }
+  }
+
   function preview() {
     invalidatePreview();
     try {
       const result = core.buildRecords($("studentInput").value, roster, template, selection());
-      output = result.records;
-      const workbook = core.exportWorkbook(output, template, xlsx);
-      const bytes = xlsx.write(workbook, {bookType: "xlsx", type: "array"});
-      downloadURL = URL.createObjectURL(new Blob([bytes], {type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
-      const now = new Date();
-      const stamp = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0")].join("");
-      $("exportBtn").href = downloadURL;
-      $("exportBtn").download = "獎懲紀錄_" + stamp + ".xlsx";
-      $("exportBtn").setAttribute("aria-disabled", "false");
-      $("exportBtn").tabIndex = 0;
-      output.forEach(record => {
-        const row = document.createElement("tr");
-        core.fields.forEach(field => {
-          const cell = document.createElement("td");
-          cell.textContent = record[field];
-          row.appendChild(cell);
-        });
-        $("previewBody").appendChild(row);
-      });
-      const duplicates = result.resolved.matches.filter(match => match.count > 1).length;
-      const skipped = result.resolved.errors.length;
-      status("resultStatus", "成功建立 " + output.length + " 筆紀錄" +
-        (duplicates ? "；" + duplicates + " 位重複學生已各保留 1 筆。" : "。") +
-        (skipped ? "\n已略過 " + skipped + " 筆無法辨識的輸入（詳見上方紅字）；其餘學生可正常匯出。" : ""), skipped ? "warning" : "ok");
+      replaceOutput(result.records);
+      previewSummary = {duplicates: result.resolved.matches.filter(match => match.count > 1).length, skipped: result.resolved.errors.length};
+      reportOutput("成功建立 " + output.length + " 筆紀錄");
     } catch (error) {
       invalidatePreview(error.message);
       $("resultStatus").classList.add("error");
@@ -230,6 +365,26 @@
     });
   });
   $("previewBtn").addEventListener("click", preview);
+  $("selectAll").addEventListener("change", () => {
+    selectedRows.clear();
+    if ($("selectAll").checked) output.forEach((record, index) => selectedRows.add(index));
+    renderOutput();
+  });
+  $("editSelectedBtn").addEventListener("click", () => openEditor(Array.from(selectedRows).sort((a, b) => a - b)));
+  $("editArticle").addEventListener("change", () => {
+    fillEditClauses();
+    if ($("editApplyAmount").checked) $("editAmount").value = template.defaultAmounts[$("editArticle").value] || "";
+  });
+  $("editClause").addEventListener("change", () => fillEditItems());
+  $("editItem").addEventListener("change", syncEditor);
+  ["editApplyRule", "editApplyAmount", "editApplyAdjust"].forEach(id => $(id).addEventListener("change", syncEditor));
+  $("editAdjustReason").addEventListener("change", () => {
+    if (!$("editAdjustReason").value) $("editAdjustAmount").value = "";
+    syncEditor();
+  });
+  $("recordEditForm").addEventListener("submit", saveEdits);
+  $("cancelEditBtn").addEventListener("click", () => $("recordEditor").close());
+  $("recordEditor").addEventListener("close", () => { if (!$("recordEditor").open) editingRows = []; });
   $("exportBtn").addEventListener("click", event => {
     if (!output.length || !downloadURL) event.preventDefault();
   });
@@ -240,6 +395,7 @@
     invalidatePreview("已清除輸入；匯入的名冊與範本仍可使用。");
   });
   resetRuleControls();
+  updateSelection();
   refreshImports();
   checkStudents();
   status("startupStatus", "程式已就緒，可選取 Excel 檔案。", "ok");

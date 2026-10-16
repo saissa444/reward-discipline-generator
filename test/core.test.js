@@ -133,3 +133,58 @@ test("export round trip retains headers, text school IDs, item, reason and both 
   assert.deepEqual(data[1], ["1999100001", "測試甲", "第20條", "第17款", "第2目", "測試事由丙。", "小過一次", "行為之動機", "申誡一次"]);
   assert.equal(data.length, 3);
 });
+
+test("single record editing changes only its reward fields and updates the exported values", () => {
+  const {records} = core.buildRecords("2,11,12", roster, template, selection);
+  const snapshot = JSON.stringify(records);
+  const edited = core.editRecords(records, [0], template, {amount: "小過一次"});
+  assert.equal(edited[0].amount, "小過一次");
+  assert.equal(edited[1], records[1]);
+  assert.equal(edited[2], records[2]);
+  assert.equal(JSON.stringify(records), snapshot);
+  assert.deepEqual(edited.map(record => [record.school, record.name]), records.map(record => [record.school, record.name]));
+  const workbook = xlsx.read(xlsx.write(core.exportWorkbook(edited, template, xlsx), {type: "buffer", bookType: "xlsx"}));
+  const data = xlsx.utils.sheet_to_json(workbook.Sheets.工作表1, {header: 1});
+  assert.equal(data[1][6], "小過一次");
+  assert.equal(data[2][6], "申誡一次");
+});
+
+test("batch editing applies only the chosen fields to the selected rows", () => {
+  const {records} = core.buildRecords("2,11,12", roster, template, selection);
+  const edited = core.editRecords(records, [0, 2], template, {article: "第20條", clause: "第17款", item: "第2目"});
+  for (const index of [0, 2]) {
+    assert.equal(edited[index].reason, "測試事由丙。");
+    assert.equal(edited[index].amount, records[index].amount);
+    assert.equal(edited[index].school, records[index].school);
+  }
+  assert.equal(edited[1], records[1]);
+  assert.equal(records[0].reason, "測試事由甲。");
+});
+
+test("edited adjustments can be set and cleared without changing other reward fields", () => {
+  const {records} = core.buildRecords("2,11", roster, template, selection);
+  const adjusted = core.editRecords(records, [0, 1], template, {adjustReason: "行為之動機", adjustAmount: "小過一次"});
+  assert(adjusted.every(record => record.adjustAmount === "小過一次"));
+  const cleared = core.editRecords(adjusted, [0], template, {adjustReason: "", adjustAmount: ""});
+  assert.equal(cleared[0].adjustAmount, "");
+  assert.equal(cleared[0].adjustReason, "");
+  assert.equal(cleared[1].adjustAmount, "小過一次");
+});
+
+test("invalid edits reject the whole batch and preserve the previous records", () => {
+  const {records} = core.buildRecords("2,11", roster, template, selection);
+  records[0].adjustReason = "行為之動機";
+  const snapshot = JSON.stringify(records);
+  assert.throws(() => core.editRecords(records, [0, 1], template, {adjustAmount: "小過一次"}), /先選擇/);
+  assert.equal(JSON.stringify(records), snapshot);
+  assert.throws(() => core.editRecords(records, [0, 1], template, {article: "第20條", clause: "第17款", item: ""}), /選擇.*目/);
+  assert.equal(JSON.stringify(records), snapshot);
+});
+
+test("editing requires a valid selection, a chosen field and unchanged roster identity", () => {
+  const {records} = core.buildRecords("2", roster, template, selection);
+  assert.throws(() => core.editRecords(records, [], template, {amount: "小過一次"}), /先選取/);
+  assert.throws(() => core.editRecords(records, [9], template, {amount: "小過一次"}), /重新選取/);
+  assert.throws(() => core.editRecords(records, [0], template, {}), /至少一組/);
+  assert.throws(() => core.editRecords(records, [0], template, {name: "其他學生"}), /名冊/);
+});
