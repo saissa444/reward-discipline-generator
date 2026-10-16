@@ -278,10 +278,10 @@ function parseStudents(){
    for(let n=a;n<=b;n++)values.push(String(n).padStart(3,"0"));
   }else values.push(token);
  }
- return [...new Set(values.map(x=>
+ return values.map(x=>
   type==="female"&&/^\d+$/.test(x)?
   x.padStart(3,"0"):x
- ))];
+ );
 }
 function matchStudent(token,type){
  const candidates=roster.filter(s=>{
@@ -415,10 +415,6 @@ $("clearBtn").addEventListener("click",()=>{
  $("resultStatus").textContent="已清除輸入";
 });
 </script>
-</body>
-</html>
-
-
 <script>
 /* v1.2 學生辨識與重複警示 */
 
@@ -637,10 +633,12 @@ $("clearBtn").addEventListener("click",()=>{
   const rosterInput = document.getElementById("rosterFile");
   if (rosterInput) {
     rosterInput.addEventListener("change", () => {
-      setTimeout(checkStudents, 500);
+      setTimeout(checkStudents, 900);
     });
   }
 
   checkStudents();
 })();
 </script>
+</body>
+</html>
