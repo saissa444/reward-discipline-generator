@@ -68,28 +68,14 @@ th{background:#eef3f9}
 
 <section>
 <h2>③ 設定共同獎懲內容</h2>
-<label>搜尋獎懲依據或事由</label>
-<input id="ruleSearch" placeholder="輸入條款、關鍵字或事由">
-<label>獎懲條文篩選</label><select id="articleFilter"><option value="">全部條文</option></select><label>選擇獎懲項目（條／款／目／原始事由）</label>
-<select id="ruleSelect"><option value="">請先匯入範本</option></select>
-<div class="grid">
-<div><label>獎懲依據（條）</label><input id="article"></div>
-<div><label>獎懲依據（款）</label><input id="clause"></div>
-<div><label>獎懲依據（目）</label><input id="item"></div>
-<div><label>額度</label><select id="amount"><option value="">請先匯入範本</option></select></div>
-</div>
-<label>獎懲事由</label>
-<textarea id="reason"></textarea>
-<div class="grid">
-<div>
-<label>加重減輕事由（選填）</label>
-<select id="adjustReason"><option value="">無</option></select>
-</div>
-<div>
-<label>加重減輕額度（選填）</label>
-<input id="adjustAmount">
-</div>
-</div>
+<p class="note">請依序選擇條、款、目，系統將自動帶入「獎懲項目」工作表中的原始事由。</p>
+<label>1. 獎懲依據（條）</label><select id="article"><option value="">請先匯入範本</option></select>
+<label>2. 獎懲依據（款）</label><select id="clause" disabled><option value="">請先選擇條</option></select>
+<label>3. 獎懲依據（目）</label><select id="item" disabled><option value="">請先選擇款</option></select>
+<label>4. 獎懲事由（依條款目自動帶入）</label><textarea id="reason" readonly placeholder="選擇條、款、目後自動顯示"></textarea>
+<label>5. 額度</label><select id="amount"><option value="">請先匯入範本</option></select>
+<label>6. 加重減輕事由（若無可不選擇）</label><select id="adjustReason"><option value="">無</option></select>
+<label>7. 加重減輕額度（若無可不選擇）</label><select id="adjustAmount"><option value="">無</option></select>
 <div class="actions">
 <button id="previewBtn">產生紀錄預覽</button>
 <button id="clearBtn" class="secondary">清除輸入</button>
@@ -202,69 +188,61 @@ function extractRoster(wb){
  );
  return best;
 }
+function fillOptions(id,values,placeholder){
+ const el=$(id);el.replaceChildren(new Option(placeholder,""));
+ for(const value of values)el.add(new Option(value,value));
+ return el;
+}
 function extractRules(wb){
  const sheet=wb.Sheets["獎懲項目"];
  if(!sheet)throw new Error("找不到「獎懲項目」工作表");
  const rows=sheetRows(sheet);
  const parsed=[];
- amountOptions=[];
- defaultAmounts={};
- adjustmentOptions=[];
+ amountOptions=[];defaultAmounts={};adjustmentOptions=[];
  for(const row of rows){
   const [article,clause,item,,reason,,g,h,,j]=Array.from({length:10},(_,i)=>clean(row[i]));
-  if(/^第\\d+條$/.test(g)&&h)defaultAmounts[g]=h;
-  if(/^\\d+$/.test(g)&&h&&!amountOptions.includes(h))amountOptions.push(h);
+  if(/^第\d+條$/.test(g)&&h)defaultAmounts[g]=h;
+  if(/^\d+$/.test(g)&&h&&h!=="以下空白"&&!amountOptions.includes(h))amountOptions.push(h);
   if(j&&j!=="加重減輕事由"&&!adjustmentOptions.includes(j))adjustmentOptions.push(j);
-  if(/^第\\d+條$/.test(article)&&/^第\\d+款$/.test(clause)&&reason){
-   parsed.push({article,clause,item,reason,amount:""});
-  }
+  if(/^第\d+條$/.test(article)&&/^第\d+款$/.test(clause)&&reason)
+   parsed.push({article,clause,item,reason});
  }
- for(const rule of parsed)rule.amount=defaultAmounts[rule.article]||"";
- if(!parsed.length)throw new Error("「獎懲項目」未找到有效條款及事由");
- const amount=$("amount");
- amount.replaceChildren(new Option("請選擇額度",""));
- for(const value of amountOptions)amount.add(new Option(value,value));
- const adjust=$("adjustReason");
- adjust.replaceChildren(new Option("無",""));
- for(const value of adjustmentOptions)adjust.add(new Option(value,value));
- const filter=$("articleFilter");
- filter.replaceChildren(new Option("全部條文",""));
- for(const value of [...new Set(parsed.map(x=>x.article))])filter.add(new Option(value,value));
+ if(!parsed.length)throw new Error("「獎懲項目」工作表未找到有效的條款與事由");
+ fillOptions("article",[...new Set(parsed.map(r=>r.article))],"請選擇條");
+ fillOptions("clause",[],"請先選擇條");
+ fillOptions("item",[],"請先選擇款");
+ fillOptions("amount",amountOptions,"請選擇額度");
+ fillOptions("adjustReason",adjustmentOptions,"無");
+ fillOptions("adjustAmount",amountOptions,"無");
+ $("clause").disabled=true;$("item").disabled=true;
+ $("reason").value="";
  return parsed;
 }
-function refreshRules(){
- const q=normalize($("ruleSearch").value);
- const articleFilter=$("articleFilter").value;
- const matches=rules.map((r,i)=>({...r,index:i}))
-  .filter(r=>(!articleFilter||r.article===articleFilter)&&(!q||normalize(
-   [r.article,r.clause,r.item,r.reason,r.amount].join(" ")
-  ).includes(q)));
- const select=$("ruleSelect");
- select.replaceChildren();
- const first=document.createElement("option");
- first.value="";
- first.textContent=rules.length?
-  "請選擇獎懲項目":"尚無可選項目，可手動輸入";
- select.appendChild(first);
- matches.forEach(r=>{
-  const option=document.createElement("option");
-  option.value=String(r.index);
-  option.textContent=[
-   r.article,r.clause,r.item,r.reason,r.amount
-  ].filter(Boolean).join(" / ");
-  select.appendChild(option);
- });
+function updateClause(){
+ const article=$("article").value;
+ fillOptions("clause",[...new Set(rules.filter(r=>r.article===article).map(r=>r.clause))],"請選擇款");
+ $("clause").disabled=!article;
+ fillOptions("item",[],"請先選擇款");$("item").disabled=true;
+ $("reason").value="";
+ $("amount").value=defaultAmounts[article]||"";
 }
-function applyRule(){
- const i=$("ruleSelect").value;
- if(i==="")return;
- const r=rules[Number(i)];
- if(!r)return;
- $("article").value=r.article;
- $("clause").value=r.clause;
- $("item").value=r.item;
- $("reason").value=r.reason;
- $("amount").value=r.amount;
+function updateItem(){
+ const article=$("article").value,clause=$("clause").value;
+ const relevant=rules.filter(r=>r.article===article&&r.clause===clause);
+ const items=[...new Set(relevant.map(r=>r.item).filter(Boolean))];
+ if(items.length){
+  fillOptions("item",items,"請選擇目");
+  $("item").disabled=false;
+  $("reason").value="";
+ }else{
+  fillOptions("item",[],"無目（不需選擇）");
+  $("item").disabled=true;
+  $("reason").value=relevant[0]?.reason||"";
+ }
+}
+function updateReason(){
+ const r=rules.find(r=>r.article===$("article").value&&r.clause===$("clause").value&&r.item===$("item").value);
+ $("reason").value=r?.reason||"";
 }
 function parseStudents(){
  const tokens=$("studentInput").value.split(/[\s,，、;；]+/).map(clean).filter(Boolean);
@@ -320,7 +298,7 @@ function buildOutput(){
   "以下學生無法確認，請修正後再匯出：\n"+errors.join("\n")
  );
  if(!records.length)throw new Error("沒有可產生的紀錄");
- if(!$("reason").value.trim())throw new Error("請填寫獎懲事由");
+ if(!$("article").value||!$("clause").value)throw new Error("請依序選擇獎懲依據（條）、（款）");\n if(!$("item").disabled&&!$("item").value)throw new Error("請選擇獎懲依據（目）");\n if(!$("reason").value.trim())throw new Error("尚未帶入獎懲事由");
  if(!$("amount").value.trim())throw new Error("請填寫額度");
  return records;
 }
