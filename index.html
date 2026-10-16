@@ -101,6 +101,16 @@ th{background:#eef3f9}
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script>
+window.addEventListener("error",function(e){
+ const el=document.getElementById("importStatus");
+ if(el){el.textContent="程式啟動錯誤："+(e.message||"未知錯誤")+"（第 "+(e.lineno||"?")+" 行）";el.className="status error";}
+});
+window.addEventListener("unhandledrejection",function(e){
+ const el=document.getElementById("importStatus");
+ if(el){el.textContent="執行錯誤："+String(e.reason?.message||e.reason);el.className="status error";}
+});
+</script>
+<script>
 "use strict";
 
 const $ = id => document.getElementById(id);
@@ -386,6 +396,21 @@ $("clearBtn").addEventListener("click",()=>{
  $("exportBtn").disabled=true;
  $("resultStatus").textContent="已清除輸入";
 });
+</script>
+<script>
+(function(){
+ const status=document.getElementById("importStatus");
+ const files=[document.getElementById("rosterFile"),document.getElementById("templateFile")];
+ files.forEach((el,i)=>el?.addEventListener("change",function(){
+  const name=el.files?.[0]?.name||"未選取";
+  setTimeout(()=>{
+   if(status?.textContent==="尚未匯入資料"){
+    status.textContent="已選取 "+name+"，但匯入程序未執行。請回報此訊息；Excel 函式庫："+(typeof XLSX==="undefined"?"載入失敗":"已載入");
+    status.className="status error";
+   }
+  },1200);
+ }));
+})();
 </script>
 <script>
 /* v1.2 學生辨識與重複警示 */
