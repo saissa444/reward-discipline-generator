@@ -94,7 +94,7 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 <label for="clause">2. 獎懲依據（款）</label><select id="clause" disabled><option value="">請先選擇條</option></select>
 <label for="item">3. 獎懲依據（目）</label><select id="item" disabled><option value="">請先選擇款</option></select>
 <label for="reason">4. 獎懲事由（自動帶入後可編輯）</label><textarea id="reason" disabled placeholder="選擇條、款、目後自動帶入，可自行修改內容"></textarea>
-<label for="amount">5. 額度</label><select id="amount"><option value="">請先匯入範本</option></select>
+<label for="amount">5. 額度（固定，自動帶入）</label><input id="amount" type="text" readonly disabled placeholder="選擇條款目後自動帶入固定額度">
 <label for="adjustReason">6. 加重減輕事由（若無可不選擇）</label><select id="adjustReason"><option value="">無</option></select>
 <label for="adjustAmount">7. 加重減輕額度（若無可不選擇）</label><select id="adjustAmount"><option value="">無</option></select>
 <div class="actions">
@@ -127,7 +127,7 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 <button id="clearRecordsBtn" type="button" class="danger" disabled>清空紀錄</button>
 </div>
 </section>
-<p class="note">版本 2026.10.16.6。匯入資料僅保留於此頁，重新整理後請重新選取檔案。</p>
+<p class="note">版本 2026.10.16.7。匯入資料僅保留於此頁，重新整理後請重新選取檔案。</p>
 </main>
 
 <dialog id="recordEditor" aria-labelledby="editTitle">
@@ -140,15 +140,13 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 <label for="editArticle">獎懲依據（條）</label><select id="editArticle"></select>
 <label for="editClause">獎懲依據（款）</label><select id="editClause"></select>
 <label for="editItem">獎懲依據（目）</label><select id="editItem"></select>
+<label for="editAmount">額度（固定，自動帶入）</label><input id="editAmount" type="text" readonly placeholder="依各筆獎懲依據自動帶入">
+<p class="note">額度依範本固定；變更獎懲依據後，會自動帶入對應額度。</p>
 </div>
 <div class="edit-group">
 <label class="check-label"><input type="checkbox" id="editApplyReason">修改獎懲事由</label>
 <label for="editReason">獎懲事由（可自行編輯）</label><textarea id="editReason"></textarea>
 <p class="note">更換條款目會重新帶入範本事由，再依需要修改。只勾選此欄可保留各筆原本的條款目。</p>
-</div>
-<div class="edit-group">
-<label class="check-label" for="editApplyAmount"><input type="checkbox" id="editApplyAmount">修改額度</label>
-<label for="editAmount">額度</label><select id="editAmount"></select>
 </div>
 <div class="edit-group">
 <label class="check-label"><input type="checkbox" id="editApplyAdjust">修改加重減輕事由與額度</label>
@@ -184,7 +182,7 @@ dialog .actions{position:sticky;bottom:-20px;background:white;padding:12px 0;mar
 })();
 </script>
 <script defer src="./vendor/xlsx.full.min.js?v=0.20.3"></script>
-<script defer src="./app-core.js?v=20261016-6"></script>
-<script defer src="./app.js?v=20261016-6"></script>
+<script defer src="./app-core.js?v=20261016-7"></script>
+<script defer src="./app.js?v=20261016-7"></script>
 </body>
 </html>

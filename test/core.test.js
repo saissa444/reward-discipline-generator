@@ -31,7 +31,7 @@ function workbook(sheets) {
 }
 const roster = core.extractRoster(workbook({姓名查詢: rosterData}), xlsx).students;
 const template = core.extractTemplate(workbook({工作表1: [headers], 獎懲項目: ruleData}), xlsx);
-const selection = {article: "第19條", clause: "第1款", item: "", amount: "申誡一次"};
+const selection = {article: "第19條", clause: "第1款", item: ""};
 
 test("every inline script parses, every local script exists, and no remote runtime CDN is used", () => {
   const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
@@ -103,10 +103,27 @@ test("template keeps original sheet name, exact nine headers, defaults and optio
   assert.throws(() => core.extractTemplate(workbook({獎懲項目: ruleData}), xlsx), /九個/);
 });
 
-test("required item, rule existence and valid amount are checked against source data", () => {
+test("required item and rule existence are checked against source data", () => {
   assert.throws(() => core.buildRecords("2", roster, template, {...selection, article: "第20條", clause: "第17款"}), /選擇.*目/);
   assert.throws(() => core.buildRecords("2", roster, template, {...selection, clause: "第999款"}), /有效/);
-  assert.throws(() => core.buildRecords("2", roster, template, {...selection, amount: "無效"}), /額度/);
+});
+
+test("base amounts come only from template defaults and cannot be edited", () => {
+  const {records} = core.buildRecords("2", roster, template, {...selection, amount: "開除學籍"});
+  assert.equal(records[0].amount, "申誡一次");
+  const before = JSON.stringify(records);
+  assert.throws(() => core.editRecords(records, [0], template, {amount: "小過一次"}), /固定/);
+  assert.equal(JSON.stringify(records), before);
+});
+
+test("missing fixed amounts reject creation and batch edits without mutating records", () => {
+  const invalidTemplate = {...template, defaultAmounts: {"第19條": "申誡一次"}};
+  const {records} = core.buildRecords("2,11", roster, template, selection);
+  const before = JSON.stringify(records);
+  const target = {article: "第20條", clause: "第17款", item: "第1目"};
+  assert.throws(() => core.buildRecords("2", roster, invalidTemplate, target), /固定額度/);
+  assert.throws(() => core.editRecords(records, [0, 1], invalidTemplate, target), /固定額度/);
+  assert.equal(JSON.stringify(records), before);
 });
 
 test("keep every repeated identifier in input order with a custom multiline reason", () => {
@@ -163,7 +180,7 @@ test("export round trip retains headers, text school IDs, item, reason and both 
 test("single record editing changes only its reward fields and updates the exported values", () => {
   const {records} = core.buildRecords("2,11,12", roster, template, selection);
   const snapshot = JSON.stringify(records);
-  const edited = core.editRecords(records, [0], template, {amount: "小過一次"});
+  const edited = core.editRecords(records, [0], template, {article: "第20條", clause: "第17款", item: "第1目"});
   assert.equal(edited[0].amount, "小過一次");
   assert.equal(edited[1], records[1]);
   assert.equal(edited[2], records[2]);
@@ -180,7 +197,7 @@ test("batch editing applies only the chosen fields to the selected rows", () => 
   const edited = core.editRecords(records, [0, 2], template, {article: "第20條", clause: "第17款", item: "第2目"});
   for (const index of [0, 2]) {
     assert.equal(edited[index].reason, "測試事由丙。");
-    assert.equal(edited[index].amount, records[index].amount);
+    assert.equal(edited[index].amount, "小過一次");
     assert.equal(edited[index].school, records[index].school);
   }
   assert.equal(edited[1], records[1]);
@@ -209,20 +226,21 @@ test("invalid edits reject the whole batch and preserve the previous records", (
 
 test("editing requires a valid selection, a chosen field and unchanged roster identity", () => {
   const {records} = core.buildRecords("2", roster, template, selection);
-  assert.throws(() => core.editRecords(records, [], template, {amount: "小過一次"}), /先選取/);
-  assert.throws(() => core.editRecords(records, [9], template, {amount: "小過一次"}), /重新選取/);
+  assert.throws(() => core.editRecords(records, [], template, {reason: "測試修改。"}), /先選取/);
+  assert.throws(() => core.editRecords(records, [9], template, {reason: "測試修改。"}), /重新選取/);
   assert.throws(() => core.editRecords(records, [0], template, {}), /至少一組/);
   assert.throws(() => core.editRecords(records, [0], template, {name: "其他學生"}), /名冊/);
 });
 
-test("amount and adjustment edits preserve each student's custom reason in the export", () => {
+test("adjustment edits preserve custom reasons and fixed base amounts in the export", () => {
   const {records} = core.buildRecords("2,11", roster, template, {...selection, reason: "自訂事由甲。\n第二行。"});
   const distinct = core.editRecords(records, [1], template, {reason: "自訂事由乙。"});
-  const edited = core.editRecords(distinct, [0, 1], template, {amount: "小過一次", adjustReason: "行為之動機", adjustAmount: "申誡一次"});
+  const edited = core.editRecords(distinct, [0, 1], template, {adjustReason: "行為之動機", adjustAmount: "申誡一次"});
   assert.deepEqual(edited.map(record => record.reason), ["自訂事由甲。\n第二行。", "自訂事由乙。"]);
   const workbook = xlsx.read(xlsx.write(core.exportWorkbook(edited, template, xlsx), {type: "buffer", bookType: "xlsx"}));
   const data = xlsx.utils.sheet_to_json(workbook.Sheets.工作表1, {header: 1});
   assert.deepEqual(data.slice(1).map(row => row[5]), edited.map(record => record.reason));
+  assert.deepEqual(data.slice(1).map(row => row[6]), ["申誡一次", "申誡一次"]);
 });
 
 test("reason-only batch edits preserve different clauses and unselected rows", () => {

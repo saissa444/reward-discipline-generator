@@ -162,13 +162,14 @@
     if (!rule) throw new Error("尚未帶入有效的獎懲事由。");
     const reason = Object.prototype.hasOwnProperty.call(selection, "reason") ? clean(selection.reason) : rule.reason;
     if (!reason) throw new Error("請填寫獎懲事由。");
-    if (!template.amountOptions.includes(selection.amount)) throw new Error("請選擇有效的額度。");
+    const amount = template.defaultAmounts[rule.article];
+    if (!amount || !template.amountOptions.includes(amount)) throw new Error("範本未設定有效的固定額度，請確認「獎懲項目」工作表。");
     if (selection.adjustReason && !template.adjustmentOptions.includes(selection.adjustReason)) throw new Error("請選擇有效的加重減輕事由。");
     if (selection.adjustAmount && !selection.adjustReason) throw new Error("選擇加重減輕額度前，請先選擇加重減輕事由。");
     if (selection.adjustAmount && !template.amountOptions.includes(selection.adjustAmount)) throw new Error("請選擇有效的加重減輕額度。");
     return {
       article: rule.article, clause: rule.clause,
-      item: rule.item, reason, amount: selection.amount,
+      item: rule.item, reason, amount,
       adjustReason: selection.adjustReason || "", adjustAmount: selection.adjustAmount || ""
     };
   }
@@ -185,8 +186,9 @@
   }
 
   function editRecords(records, indexes, template, patch) {
-    const editable = ["article", "clause", "item", "reason", "amount", "adjustReason", "adjustAmount"];
+    const editable = ["article", "clause", "item", "reason", "adjustReason", "adjustAmount"];
     if (!Object.keys(patch).length) throw new Error("請勾選至少一組要修改的欄位。");
+    if (Object.prototype.hasOwnProperty.call(patch, "amount")) throw new Error("額度依獎懲依據固定，無法單獨修改。");
     if (Object.keys(patch).some(key => !editable.includes(key))) throw new Error("學生資料依名冊顯示，請修改獎懲欄位。");
     if (!indexes.length) throw new Error("請先選取要編輯的紀錄。");
     const selected = new Set(indexes);
