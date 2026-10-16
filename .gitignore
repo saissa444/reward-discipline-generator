@@ -1,0 +1,9 @@
+node_modules/
+test-results/
+private-fixtures/
+*.xlsx
+*.xls
+*.csv
+*.tsv
+*.zip
+*.png

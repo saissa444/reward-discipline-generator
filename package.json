@@ -1,0 +1,11 @@
+{
+  "name": "reward-discipline-generator",
+  "private": true,
+  "scripts": {
+    "test": "node --check app.js && node --test test/core.test.js",
+    "test:browser": "node test/browser.e2e.js"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

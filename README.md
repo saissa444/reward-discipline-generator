@@ -1,1 +1,51 @@
-# reward-discipline-generator
+# 獎懲紀錄產生器
+
+跨 iPhone Safari、macOS、Windows 的純前端 Excel 工具。
+
+網站：https://saissa444.github.io/reward-discipline-generator/
+
+## 使用
+
+1. 匯入學生名冊及獎懲範本。兩個檔案的選取順序不限。
+2. 輸入女生隊號、建制隊號或姓名，可混用換行、空格、逗號、頓號分隔。女生隊號可省略前導零，也支援 `002-010` 範圍。
+3. 依序選條、款、目。沒有「目」的款會自動略過，並帶入範本原始事由及預設額度。
+4. 選擇額度；加重減輕事由及額度可以留空。
+5. 產生預覽，再點「匯出 Excel」。iPhone Safari 下載後可到「檔案」App 開啟。
+
+重複輸入同一學生會顯示次數，輸出保留一筆。同名學生若無法唯一確認，須改用隊號。查無學生會阻擋匯出。更改學生、獎懲選項或匯入檔案後，必須重新產生預覽。
+
+匯入內容僅存在當前頁面的記憶體中，重新整理後需要重選檔案。若 iCloud 檔案無法讀取，先將檔案下載至本機再選取。
+
+## 資料與隱私
+
+- 優先讀取 `姓名查詢`，欄位為姓名、建制隊號、女生隊號、學籍號碼。十位學籍號碼用於輸出，女生隊號會補至三位。
+- 從 `獎懲項目` 讀取條款目、原始事由、預設額度、額度選單、加重減輕事由。
+- 匯出採用所選範本的原始工作表名稱、欄位順序及九個欄名，包括括號與「若無可不選擇」文字。輸出為已確認的資料值，不帶入範本空白列中的公式提示。
+- Excel 經 `FileReader.readAsArrayBuffer` 在瀏覽器處理，不依賴 `Blob.arrayBuffer()`，也不會上傳名冊。
+- SheetJS CE 0.20.3 內附於 `vendor/`，執行時無須連線第三方 CDN。原始來源：<https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js>；授權見 `vendor/SheetJS-LICENSE.txt`。
+- **禁止提交真實學生名冊、姓名、學籍號碼、匯出結果及含個資截圖。** `.gitignore` 排除 Excel 等測試資料。測試檔只能放在儲存庫外。
+
+## 除錯與回歸測試
+
+2026-10-16 修復：舊版 `index.html` 第 307 行將字面 `\n` 放在 JavaScript 敘述之間，引發 `SyntaxError: Invalid or unexpected token`，整段主程式未執行，檔案匯入事件因此沒有註冊。已拆分 DOM 與解析邏輯、整合學生辨識，並加入獨立啟動診斷、分別顯示兩份檔案的讀取結果，以及同檔重試與舊預覽失效處理。
+
+Node.js 22 以上：
+
+```sh
+npm test
+```
+
+此測試不需要額外套件，使用虛構資料檢查主程式與內嵌 script 語法、工作表優先順序、混合識別、同名與重複、條款目驗證、選填調整及 Excel 匯出回讀。GitHub Actions 每次推送也會執行。
+
+完整瀏覽器測試（安裝開發相依套件與 Playwright 瀏覽器後）：
+
+```sh
+npm install
+npx playwright install --with-deps webkit chromium
+ROSTER_PATH=/private/roster.xlsx TEMPLATE_PATH=/private/template.xlsx npm run test:browser
+TEST_BROWSER=chromium ROSTER_PATH=/private/roster.xlsx TEMPLATE_PATH=/private/template.xlsx npm run test:browser
+```
+
+測試會自行啟動本機伺服器，使用 iPhone 13 視窗與觸控設定、停用 `Blob.arrayBuffer()`，逐筆操作真實範本的獎懲選單，檢查匯入、辨識、警示、預覽、下載回讀、同檔重試、錯誤檔案、匯入順序與舊資料失效。另監看 Console、第三方請求及上傳請求。匯出測試資料放在系統暫存目錄並於核對後移除，不寫入儲存庫。
+
+WebKit 的 iPhone 模擬驗證不等於在實體 iPhone 上操作 Safari／iCloud 檔案選取器。
