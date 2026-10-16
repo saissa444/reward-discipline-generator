@@ -160,32 +160,28 @@ function setImportStatus(message,isError=false){
  $("importStatus").className="status "+(isError?"error":"ok");
 }
 function extractRoster(wb){
+ const sheetNames=[...wb.SheetNames].sort((a,b)=>(a==="姓名查詢"?-1:b==="姓名查詢"?1:0));
  let best=[];
- for(const name of wb.SheetNames){
+ for(const name of sheetNames){
   const rows=sheetRows(wb.Sheets[name]);
-  const h=findHeaderRow(rows,[
-   ["姓名"],["學籍號碼","學籍號","學號"],
-   ["女生隊號","女生隊","隊號"],
-   ["建制隊號","建制"]
-  ]);
+  const h=findHeaderRow(rows,[["姓名"],["學籍號碼","學籍號","學號"],["女生隊號"],["建制隊號"]]);
   if(h.score<2)continue;
   const headers=rows[h.index].map(clean);
   const nameCol=findColumn(headers,["姓名"]);
   const schoolCol=findColumn(headers,["學籍號碼","學籍號","學號"]);
-  const femaleCol=findColumn(headers,["女生隊號","女生隊"]);
-  const teamCol=findColumn(headers,["建制隊號","建制"]);
+  const femaleCol=findColumn(headers,["女生隊號"]);
+  const teamCol=findColumn(headers,["建制隊號"]);
   if(nameCol<0||schoolCol<0)continue;
-  const data=rows.slice(h.index+1).map(r=>({
-   name:clean(r[nameCol]),
-   school:clean(r[schoolCol]),
-   female:femaleCol>=0?clean(r[femaleCol]):"",
-   team:teamCol>=0?clean(r[teamCol]):""
-  })).filter(x=>x.name&&/^\d{10}$/.test(x.school));
+  const data=rows.slice(h.index+1).map(row=>({
+   name:clean(row[nameCol]),
+   school:clean(row[schoolCol]).replace(/\\.0$/,""),
+   female:femaleCol>=0?clean(row[femaleCol]).replace(/\\.0$/,""):"",
+   team:teamCol>=0?clean(row[teamCol]).replace(/\\.0$/,""):""
+  })).filter(x=>x.name&&/^\\d{10}$/.test(x.school));
+  if(name==="姓名查詢"&&data.length)return data;
   if(data.length>best.length)best=data;
  }
- if(!best.length)throw new Error(
-  "找不到同時包含姓名及10位數學籍號碼的名冊，請確認欄位標題。"
- );
+ if(!best.length)throw new Error("無法辨識名冊：請確認 Excel 有「姓名查詢」工作表，且包含姓名、10位數學籍號碼。");
  return best;
 }
 function fillOptions(id,values,placeholder){
