@@ -70,20 +70,20 @@ th{background:#eef3f9}
 <h2>③ 設定共同獎懲內容</h2>
 <label>搜尋獎懲依據或事由</label>
 <input id="ruleSearch" placeholder="輸入條款、關鍵字或事由">
-<label>選擇獎懲項目</label>
+<label>獎懲條文篩選</label><select id="articleFilter"><option value="">全部條文</option></select><label>選擇獎懲項目（條／款／目／原始事由）</label>
 <select id="ruleSelect"><option value="">請先匯入範本</option></select>
 <div class="grid">
 <div><label>獎懲依據（條）</label><input id="article"></div>
 <div><label>獎懲依據（款）</label><input id="clause"></div>
 <div><label>獎懲依據（目）</label><input id="item"></div>
-<div><label>額度</label><input id="amount" placeholder="請依學校格式填寫"></div>
+<div><label>額度</label><select id="amount"><option value="">請先匯入範本</option></select></div>
 </div>
 <label>獎懲事由</label>
 <textarea id="reason"></textarea>
 <div class="grid">
 <div>
 <label>加重減輕事由（選填）</label>
-<input id="adjustReason">
+<select id="adjustReason"><option value="">無</option></select>
 </div>
 <div>
 <label>加重減輕額度（選填）</label>
@@ -120,6 +120,9 @@ th{background:#eef3f9}
 const $ = id => document.getElementById(id);
 let roster = [];
 let rules = [];
+let amountOptions=[];
+let defaultAmounts={};
+let adjustmentOptions=[];
 let output = [];
 let templateWorkbook = null;
 let templateHeaders = [
@@ -200,39 +203,42 @@ function extractRoster(wb){
  return best;
 }
 function extractRules(wb){
- let result=[];
- for(const name of wb.SheetNames){
-  const rows=sheetRows(wb.Sheets[name]);
-  const h=findHeaderRow(rows,[
-   ["獎懲依據","條"],["款"],["獎懲事由","事由"],
-   ["額度"]
-  ]);
-  if(h.score<2)continue;
-  const headers=rows[h.index].map(clean);
-  const articleCol=findColumn(headers,["獎懲依據（條）","條"]);
-  const clauseCol=findColumn(headers,["獎懲依據（款）","款"]);
-  const itemCol=findColumn(headers,["獎懲依據（目）","目"]);
-  const reasonCol=findColumn(headers,["獎懲事由","事由"]);
-  const amountCol=findColumn(headers,["額度"]);
-  if(reasonCol<0)continue;
-  result.push(...rows.slice(h.index+1).map(r=>({
-   article:articleCol>=0?clean(r[articleCol]):"",
-   clause:clauseCol>=0?clean(r[clauseCol]):"",
-   item:itemCol>=0?clean(r[itemCol]):"",
-   reason:clean(r[reasonCol]),
-   amount:amountCol>=0?clean(r[amountCol]):""
-  })).filter(x=>x.reason));
+ const sheet=wb.Sheets["獎懲項目"];
+ if(!sheet)throw new Error("找不到「獎懲項目」工作表");
+ const rows=sheetRows(sheet);
+ const parsed=[];
+ amountOptions=[];
+ defaultAmounts={};
+ adjustmentOptions=[];
+ for(const row of rows){
+  const [article,clause,item,,reason,,g,h,,j]=Array.from({length:10},(_,i)=>clean(row[i]));
+  if(/^第\\d+條$/.test(g)&&h)defaultAmounts[g]=h;
+  if(/^\\d+$/.test(g)&&h&&!amountOptions.includes(h))amountOptions.push(h);
+  if(j&&j!=="加重減輕事由"&&!adjustmentOptions.includes(j))adjustmentOptions.push(j);
+  if(/^第\\d+條$/.test(article)&&/^第\\d+款$/.test(clause)&&reason){
+   parsed.push({article,clause,item,reason,amount:""});
+  }
  }
- return result.filter((r,i,a)=>
-  a.findIndex(x=>JSON.stringify(x)===JSON.stringify(r))===i
- );
+ for(const rule of parsed)rule.amount=defaultAmounts[rule.article]||"";
+ if(!parsed.length)throw new Error("「獎懲項目」未找到有效條款及事由");
+ const amount=$("amount");
+ amount.replaceChildren(new Option("請選擇額度",""));
+ for(const value of amountOptions)amount.add(new Option(value,value));
+ const adjust=$("adjustReason");
+ adjust.replaceChildren(new Option("無",""));
+ for(const value of adjustmentOptions)adjust.add(new Option(value,value));
+ const filter=$("articleFilter");
+ filter.replaceChildren(new Option("全部條文",""));
+ for(const value of [...new Set(parsed.map(x=>x.article))])filter.add(new Option(value,value));
+ return parsed;
 }
 function refreshRules(){
  const q=normalize($("ruleSearch").value);
+ const articleFilter=$("articleFilter").value;
  const matches=rules.map((r,i)=>({...r,index:i}))
-  .filter(r=>!q||normalize(
+  .filter(r=>(!articleFilter||r.article===articleFilter)&&(!q||normalize(
    [r.article,r.clause,r.item,r.reason,r.amount].join(" ")
-  ).includes(q));
+  ).includes(q)));
  const select=$("ruleSelect");
  select.replaceChildren();
  const first=document.createElement("option");
@@ -240,7 +246,7 @@ function refreshRules(){
  first.textContent=rules.length?
   "請選擇獎懲項目":"尚無可選項目，可手動輸入";
  select.appendChild(first);
- matches.slice(0,500).forEach(r=>{
+ matches.forEach(r=>{
   const option=document.createElement("option");
   option.value=String(r.index);
   option.textContent=[
@@ -388,6 +394,7 @@ $("templateFile").addEventListener("change",async e=>{
  }catch(err){setImportStatus(err.message,true);}
 });
 $("ruleSearch").addEventListener("input",refreshRules);
+$("articleFilter").addEventListener("change",refreshRules);
 $("ruleSelect").addEventListener("change",applyRule);
 $("previewBtn").addEventListener("click",preview);
 $("exportBtn").addEventListener("click",exportExcel);
