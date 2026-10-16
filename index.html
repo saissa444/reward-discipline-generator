@@ -1,0 +1,419 @@
+
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>獎懲紀錄產生器</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Microsoft JhengHei",sans-serif;color:#24324a;background:#f3f6fb}
+*{box-sizing:border-box}
+body{margin:0}
+header{background:#244b80;color:white;padding:20px}
+header h1{margin:0;font-size:24px}
+header p{margin:6px 0 0;opacity:.85}
+main{max-width:1050px;margin:20px auto;padding:0 15px}
+section{background:white;border:1px solid #dce4ef;border-radius:14px;padding:20px;margin-bottom:16px}
+h2{font-size:18px;margin:0 0 15px}
+label{display:block;font-weight:600;margin:12px 0 6px}
+input,select,textarea,button{font:inherit}
+input,select,textarea{width:100%;padding:10px;border:1px solid #b8c7d9;border-radius:8px;background:white}
+textarea{min-height:95px}
+button{border:0;border-radius:8px;padding:11px 18px;background:#285a96;color:white;cursor:pointer}
+button.secondary{background:#e7edf6;color:#244b80}
+button:disabled{opacity:.5;cursor:not-allowed}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+@media(max-width:650px){.grid{grid-template-columns:1fr}}
+.note{font-size:13px;color:#63738b;line-height:1.7}
+.status{background:#eef5ff;border-radius:8px;padding:12px;margin-top:12px}
+.error{color:#b42318}
+.ok{color:#147d4d}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.tablewrap{overflow:auto}
+table{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
+th,td{border:1px solid #dce4ef;padding:9px;text-align:left}
+th{background:#eef3f9}
+.badge{display:inline-block;background:#e7edf6;padding:4px 9px;border-radius:6px}
+</style>
+</head>
+<body>
+<header>
+<h1>獎懲紀錄產生器</h1>
+<p>批次輸入學生・自動比對名冊・匯出學校 Excel</p>
+</header>
+<main>
+<section>
+<h2>① 匯入資料</h2>
+<div class="grid">
+<div>
+<label>學生名冊 Excel</label>
+<input type="file" id="rosterFile" accept=".xlsx,.xls">
+</div>
+<div>
+<label>獎懲匯入範本 Excel</label>
+<input type="file" id="templateFile" accept=".xlsx,.xls">
+</div>
+</div>
+<div id="importStatus" class="status">尚未匯入資料</div>
+<p class="note">Excel 只在本機瀏覽器處理，不會上傳到 GitHub。請勿將學生名冊提交到公開儲存庫。</p>
+</section>
+
+<section>
+<h2>② 批次選擇學生</h2>
+<label>學生識別方式</label>
+<select id="idType">
+<option value="female">女生隊號</option>
+<option value="team">建制隊號</option>
+<option value="name">姓名</option>
+</select>
+<label>輸入學生（可多筆）</label>
+<textarea id="studentInput" placeholder="例如：001、002、003"></textarea>
+<p class="note">支援換行、逗號、頓號、空格分隔。女生隊號亦支援 001-010 的連續範圍。</p>
+</section>
+
+<section>
+<h2>③ 設定共同獎懲內容</h2>
+<label>搜尋獎懲依據或事由</label>
+<input id="ruleSearch" placeholder="輸入條款、關鍵字或事由">
+<label>選擇獎懲項目</label>
+<select id="ruleSelect"><option value="">請先匯入範本</option></select>
+<div class="grid">
+<div><label>獎懲依據（條）</label><input id="article"></div>
+<div><label>獎懲依據（款）</label><input id="clause"></div>
+<div><label>獎懲依據（目）</label><input id="item"></div>
+<div><label>額度</label><input id="amount" placeholder="請依學校格式填寫"></div>
+</div>
+<label>獎懲事由</label>
+<textarea id="reason"></textarea>
+<div class="grid">
+<div>
+<label>加重減輕事由（選填）</label>
+<input id="adjustReason">
+</div>
+<div>
+<label>加重減輕額度（選填）</label>
+<input id="adjustAmount">
+</div>
+</div>
+<div class="actions">
+<button id="previewBtn">產生紀錄預覽</button>
+<button id="clearBtn" class="secondary">清除輸入</button>
+</div>
+</section>
+
+<section>
+<h2>④ 預覽與匯出</h2>
+<div id="resultStatus" class="status">尚未產生紀錄</div>
+<div class="tablewrap">
+<table>
+<thead><tr>
+<th>學號</th><th>姓名</th><th>條</th><th>款</th><th>目</th><th>獎懲事由</th><th>額度</th>
+</tr></thead>
+<tbody id="previewBody"></tbody>
+</table>
+</div>
+<div class="actions">
+<button id="exportBtn" disabled>匯出 Excel</button>
+</div>
+</section>
+</main>
+
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script>
+"use strict";
+
+const $ = id => document.getElementById(id);
+let roster = [];
+let rules = [];
+let output = [];
+let templateWorkbook = null;
+let templateHeaders = [
+ "學號","姓名","獎懲依據（條）","獎懲依據（款）",
+ "獎懲依據（目）","獎懲事由","額度",
+ "加重減輕事由","加重減輕額度"
+];
+
+function clean(v){
+ return String(v ?? "").trim();
+}
+function normalize(v){
+ return clean(v).replace(/\s+/g,"").toLowerCase();
+}
+function findColumn(headers,words){
+ return headers.findIndex(h =>
+  words.some(w=>normalize(h).includes(normalize(w)))
+ );
+}
+function sheetRows(sheet){
+ return XLSX.utils.sheet_to_json(sheet,{
+  header:1,defval:"",raw:false
+ });
+}
+function findHeaderRow(rows,groups){
+ let best={index:-1,score:0};
+ rows.slice(0,30).forEach((row,i)=>{
+  let score=groups.filter(g=>
+   row.some(c=>g.some(w=>normalize(c).includes(normalize(w))))
+  ).length;
+  if(score>best.score)best={index:i,score};
+ });
+ return best;
+}
+function readExcel(file){
+ return new Promise((resolve,reject)=>{
+  const reader=new FileReader();
+  reader.onload=()=>{
+   try{
+    resolve(XLSX.read(reader.result,{type:"array"}));
+   }catch(e){reject(e);}
+  };
+  reader.onerror=()=>reject(new Error("無法讀取檔案"));
+  reader.readAsArrayBuffer(file);
+ });
+}
+function setImportStatus(message,isError=false){
+ $("importStatus").textContent=message;
+ $("importStatus").className="status "+(isError?"error":"ok");
+}
+function extractRoster(wb){
+ let best=[];
+ for(const name of wb.SheetNames){
+  const rows=sheetRows(wb.Sheets[name]);
+  const h=findHeaderRow(rows,[
+   ["姓名"],["學籍號碼","學籍號","學號"],
+   ["女生隊號","女生隊","隊號"],
+   ["建制隊號","建制"]
+  ]);
+  if(h.score<2)continue;
+  const headers=rows[h.index].map(clean);
+  const nameCol=findColumn(headers,["姓名"]);
+  const schoolCol=findColumn(headers,["學籍號碼","學籍號","學號"]);
+  const femaleCol=findColumn(headers,["女生隊號","女生隊"]);
+  const teamCol=findColumn(headers,["建制隊號","建制"]);
+  if(nameCol<0||schoolCol<0)continue;
+  const data=rows.slice(h.index+1).map(r=>({
+   name:clean(r[nameCol]),
+   school:clean(r[schoolCol]),
+   female:femaleCol>=0?clean(r[femaleCol]):"",
+   team:teamCol>=0?clean(r[teamCol]):""
+  })).filter(x=>x.name&&/^\d{10}$/.test(x.school));
+  if(data.length>best.length)best=data;
+ }
+ if(!best.length)throw new Error(
+  "找不到同時包含姓名及10位數學籍號碼的名冊，請確認欄位標題。"
+ );
+ return best;
+}
+function extractRules(wb){
+ let result=[];
+ for(const name of wb.SheetNames){
+  const rows=sheetRows(wb.Sheets[name]);
+  const h=findHeaderRow(rows,[
+   ["獎懲依據","條"],["款"],["獎懲事由","事由"],
+   ["額度"]
+  ]);
+  if(h.score<2)continue;
+  const headers=rows[h.index].map(clean);
+  const articleCol=findColumn(headers,["獎懲依據（條）","條"]);
+  const clauseCol=findColumn(headers,["獎懲依據（款）","款"]);
+  const itemCol=findColumn(headers,["獎懲依據（目）","目"]);
+  const reasonCol=findColumn(headers,["獎懲事由","事由"]);
+  const amountCol=findColumn(headers,["額度"]);
+  if(reasonCol<0)continue;
+  result.push(...rows.slice(h.index+1).map(r=>({
+   article:articleCol>=0?clean(r[articleCol]):"",
+   clause:clauseCol>=0?clean(r[clauseCol]):"",
+   item:itemCol>=0?clean(r[itemCol]):"",
+   reason:clean(r[reasonCol]),
+   amount:amountCol>=0?clean(r[amountCol]):""
+  })).filter(x=>x.reason));
+ }
+ return result.filter((r,i,a)=>
+  a.findIndex(x=>JSON.stringify(x)===JSON.stringify(r))===i
+ );
+}
+function refreshRules(){
+ const q=normalize($("ruleSearch").value);
+ const matches=rules.map((r,i)=>({...r,index:i}))
+  .filter(r=>!q||normalize(
+   [r.article,r.clause,r.item,r.reason,r.amount].join(" ")
+  ).includes(q));
+ const select=$("ruleSelect");
+ select.replaceChildren();
+ const first=document.createElement("option");
+ first.value="";
+ first.textContent=rules.length?
+  "請選擇獎懲項目":"尚無可選項目，可手動輸入";
+ select.appendChild(first);
+ matches.slice(0,500).forEach(r=>{
+  const option=document.createElement("option");
+  option.value=String(r.index);
+  option.textContent=[
+   r.article,r.clause,r.item,r.reason,r.amount
+  ].filter(Boolean).join(" / ");
+  select.appendChild(option);
+ });
+}
+function applyRule(){
+ const i=$("ruleSelect").value;
+ if(i==="")return;
+ const r=rules[Number(i)];
+ if(!r)return;
+ $("article").value=r.article;
+ $("clause").value=r.clause;
+ $("item").value=r.item;
+ $("reason").value=r.reason;
+ $("amount").value=r.amount;
+}
+function parseStudents(){
+ const raw=$("studentInput").value;
+ const type=$("idType").value;
+ const tokens=raw.split(/[\s,，、;；]+/).map(clean).filter(Boolean);
+ let values=[];
+ for(const token of tokens){
+  const range=token.match(/^(\d{1,3})-(\d{1,3})$/);
+  if(type==="female"&&range){
+   const a=Number(range[1]),b=Number(range[2]);
+   if(b<a||b-a>300)throw new Error("隊號範圍不正確");
+   for(let n=a;n<=b;n++)values.push(String(n).padStart(3,"0"));
+  }else values.push(token);
+ }
+ return [...new Set(values.map(x=>
+  type==="female"&&/^\d+$/.test(x)?
+  x.padStart(3,"0"):x
+ ))];
+}
+function matchStudent(token,type){
+ const candidates=roster.filter(s=>{
+  if(type==="name")return normalize(s.name)===normalize(token);
+  if(type==="team")return normalize(s.team)===normalize(token);
+  return normalize(s.female).padStart(3,"0")===token;
+ });
+ if(candidates.length===0)return {error:"找不到："+token};
+ if(candidates.length>1)return {error:"資料不唯一："+token};
+ return {student:candidates[0]};
+}
+function buildOutput(){
+ if(!roster.length)throw new Error("請先匯入學生名冊");
+ const tokens=parseStudents();
+ if(!tokens.length)throw new Error("請輸入學生");
+ const type=$("idType").value;
+ const records=[];
+ const errors=[];
+ const used=new Set();
+ for(const token of tokens){
+  const match=matchStudent(token,type);
+  if(match.error){errors.push(match.error);continue;}
+  const s=match.student;
+  if(used.has(s.school))continue;
+  used.add(s.school);
+  records.push({
+   "學號":s.school,
+   "姓名":s.name,
+   "獎懲依據（條）":$("article").value.trim(),
+   "獎懲依據（款）":$("clause").value.trim(),
+   "獎懲依據（目）":$("item").value.trim(),
+   "獎懲事由":$("reason").value.trim(),
+   "額度":$("amount").value.trim(),
+   "加重減輕事由":$("adjustReason").value.trim(),
+   "加重減輕額度":$("adjustAmount").value.trim()
+  });
+ }
+ if(errors.length)throw new Error(
+  "以下學生無法確認，請修正後再匯出：\n"+errors.join("\n")
+ );
+ if(!records.length)throw new Error("沒有可產生的紀錄");
+ if(!$("reason").value.trim())throw new Error("請填寫獎懲事由");
+ if(!$("amount").value.trim())throw new Error("請填寫額度");
+ return records;
+}
+function preview(){
+ try{
+  output=buildOutput();
+  const tbody=$("previewBody");
+  tbody.replaceChildren();
+  for(const record of output){
+   const tr=document.createElement("tr");
+   [
+    "學號","姓名","獎懲依據（條）","獎懲依據（款）",
+    "獎懲依據（目）","獎懲事由","額度"
+   ].forEach(key=>{
+    const td=document.createElement("td");
+    td.textContent=record[key];
+    tr.appendChild(td);
+   });
+   tbody.appendChild(tr);
+  }
+  $("resultStatus").textContent="成功建立 "+output.length+" 筆紀錄";
+  $("resultStatus").className="status ok";
+  $("exportBtn").disabled=false;
+ }catch(e){
+  output=[];
+  $("previewBody").replaceChildren();
+  $("exportBtn").disabled=true;
+  $("resultStatus").textContent=e.message;
+  $("resultStatus").className="status error";
+ }
+}
+function exportExcel(){
+ if(!output.length)return;
+ const data=[
+  templateHeaders,
+  ...output.map(r=>templateHeaders.map(h=>r[h]??""))
+ ];
+ const wb=XLSX.utils.book_new();
+ const ws=XLSX.utils.aoa_to_sheet(data);
+ ws["!cols"]=[
+  {wch:17},{wch:12},{wch:18},{wch:18},{wch:18},
+  {wch:55},{wch:12},{wch:25},{wch:18}
+ ];
+ XLSX.utils.book_append_sheet(wb,ws,"獎懲匯入");
+ const date=new Date();
+ const stamp=[
+  date.getFullYear(),
+  String(date.getMonth()+1).padStart(2,"0"),
+  String(date.getDate()).padStart(2,"0")
+ ].join("");
+ XLSX.writeFile(wb,"獎懲紀錄_"+stamp+".xlsx");
+}
+$("rosterFile").addEventListener("change",async e=>{
+ const file=e.target.files[0];
+ if(!file)return;
+ try{
+  const wb=await readExcel(file);
+  roster=extractRoster(wb);
+  setImportStatus("已載入 "+roster.length+" 位學生；獎懲項目 "+rules.length+" 筆");
+ }catch(err){setImportStatus(err.message,true);}
+});
+$("templateFile").addEventListener("change",async e=>{
+ const file=e.target.files[0];
+ if(!file)return;
+ try{
+  const wb=await readExcel(file);
+  templateWorkbook=wb;
+  rules=extractRules(wb);
+  refreshRules();
+  setImportStatus("已載入 "+roster.length+" 位學生；獎懲項目 "+rules.length+" 筆");
+ }catch(err){setImportStatus(err.message,true);}
+});
+$("ruleSearch").addEventListener("input",refreshRules);
+$("ruleSelect").addEventListener("change",applyRule);
+$("previewBtn").addEventListener("click",preview);
+$("exportBtn").addEventListener("click",exportExcel);
+$("clearBtn").addEventListener("click",()=>{
+ $("studentInput").value="";
+ $("reason").value="";
+ $("article").value="";
+ $("clause").value="";
+ $("item").value="";
+ $("amount").value="";
+ $("adjustReason").value="";
+ $("adjustAmount").value="";
+ output=[];
+ $("previewBody").replaceChildren();
+ $("exportBtn").disabled=true;
+ $("resultStatus").textContent="已清除輸入";
+});
+</script>
+</body>
+</html>
