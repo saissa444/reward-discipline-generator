@@ -417,3 +417,230 @@ $("clearBtn").addEventListener("click",()=>{
 </script>
 </body>
 </html>
+
+
+<script>
+/* v1.2 學生辨識與重複警示 */
+
+(function () {
+  const input = document.getElementById("studentInput");
+  const idType = document.getElementById("idType");
+
+  if (!input || !idType) return;
+
+  // 建立警示顯示區域
+  const panel = document.createElement("div");
+  panel.id = "studentCheckPanel";
+  panel.style.cssText = `
+    margin-top:16px;
+    padding:14px;
+    border:1px solid #dce4ef;
+    border-radius:10px;
+    background:#f8fafc;
+    line-height:1.8;
+    font-size:14px;
+  `;
+
+  input.insertAdjacentElement("afterend", panel);
+
+  function escapeHTML(value) {
+    return String(value ?? "").replace(
+      /[&<>"']/g,
+      c => ({
+        "&":"&amp;",
+        "<":"&lt;",
+        ">":"&gt;",
+        '"':"&quot;",
+        "'":"&#39;"
+      })[c]
+    );
+  }
+
+  function getTokens() {
+    const type = idType.value;
+    const raw = input.value
+      .split(/[\s,，、;；]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    const expanded = [];
+
+    for (const value of raw) {
+      const range = value.match(/^(\d{1,3})-(\d{1,3})$/);
+
+      if (type === "female" && range) {
+        const start = Number(range[1]);
+        const end = Number(range[2]);
+
+        if (end >= start && end - start <= 300) {
+          for (let n = start; n <= end; n++) {
+            expanded.push(String(n).padStart(3, "0"));
+          }
+          continue;
+        }
+      }
+
+      expanded.push(
+        type === "female" && /^\d+$/.test(value)
+          ? value.padStart(3, "0")
+          : value
+      );
+    }
+
+    return expanded;
+  }
+
+  function checkStudents() {
+    const tokens = getTokens();
+
+    if (!tokens.length) {
+      panel.innerHTML = "尚未輸入學生資料";
+      return;
+    }
+
+    if (typeof roster === "undefined" || !roster.length) {
+      panel.innerHTML =
+        '<span style="color:#b42318">請先匯入學生名冊</span>';
+      return;
+    }
+
+    const type = idType.value;
+    const counts = new Map();
+    const students = new Map();
+    const errors = [];
+    const repeated = new Set();
+
+    function normalizeValue(value) {
+      return String(value ?? "")
+        .trim()
+        .replace(/\s+/g, "")
+        .toLowerCase();
+    }
+
+    // 第一階段：比對學生名冊
+    for (const token of tokens) {
+      const matches = roster.filter(s => {
+        if (type === "name") {
+          return normalizeValue(s.name) === normalizeValue(token);
+        }
+
+        if (type === "team") {
+          return normalizeValue(s.team) === normalizeValue(token);
+        }
+
+        return normalizeValue(s.female).padStart(3, "0")
+          === normalizeValue(token);
+      });
+
+      if (matches.length === 0) {
+        errors.push({
+          token,
+          message:"查無此學生"
+        });
+        continue;
+      }
+
+      if (matches.length > 1) {
+        errors.push({
+          token,
+          message:"符合多位學生，無法唯一辨識"
+        });
+        continue;
+      }
+
+      const student = matches[0];
+      const key = String(student.school);
+
+      counts.set(key, (counts.get(key) || 0) + 1);
+      students.set(key, student);
+    }
+
+    // 第二階段：顯示辨識結果
+    let html = `
+      <div style="font-weight:bold;margin-bottom:8px">
+        學生辨識結果
+      </div>
+    `;
+
+    for (const [key, student] of students) {
+      const count = counts.get(key);
+      const duplicate = count > 1;
+
+      const female = escapeHTML(student.female);
+      const team = escapeHTML(student.team);
+      const name = escapeHTML(student.name);
+      const school = escapeHTML(student.school);
+
+      html += `
+        <div style="
+          padding:9px 0;
+          border-bottom:1px solid #e2e8f0;
+        ">
+          <div>
+            ${duplicate ? "🔴" : "✅"}
+            <strong>${name}</strong>
+            ${duplicate
+              ? `<strong style="color:#dc2626">
+                  重複 ${count} 次
+                 </strong>`
+              : `<span style="color:#15803d">
+                  辨識成功
+                 </span>`
+            }
+          </div>
+          <div style="color:#64748b;font-size:13px">
+            女生隊號：${female}　
+            建制隊號：${team}　
+            學籍號碼：${school}
+          </div>
+        </div>
+      `;
+
+      if (duplicate) repeated.add(key);
+    }
+
+    // 第三階段：無法辨識者以紅字顯示
+    for (const error of errors) {
+      html += `
+        <div style="
+          padding:9px 0;
+          color:#dc2626;
+          border-bottom:1px solid #fee2e2;
+        ">
+          ❌ <strong>${escapeHTML(error.token)}</strong>
+          — ${escapeHTML(error.message)}
+        </div>
+      `;
+    }
+
+    // 第四階段：統計
+    html += `
+      <div style="
+        margin-top:12px;
+        padding:10px;
+        background:#eef2f7;
+        border-radius:8px;
+      ">
+        輸入總次數：${tokens.length}<br>
+        辨識成功：${students.size} 位<br>
+        重複學生：${repeated.size} 位<br>
+        無法辨識：${errors.length} 筆
+      </div>
+    `;
+
+    panel.innerHTML = html;
+  }
+
+  input.addEventListener("input", checkStudents);
+  idType.addEventListener("change", checkStudents);
+
+  const rosterInput = document.getElementById("rosterFile");
+  if (rosterInput) {
+    rosterInput.addEventListener("change", () => {
+      setTimeout(checkStudents, 500);
+    });
+  }
+
+  checkStudents();
+})();
+</script>
