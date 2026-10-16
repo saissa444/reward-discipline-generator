@@ -109,11 +109,13 @@ test("required item, rule existence and valid amount are checked against source 
   assert.throws(() => core.buildRecords("2", roster, template, {...selection, amount: "無效"}), /額度/);
 });
 
-test("deduplicate by school number; reason always comes from source, not editable selection", () => {
-  const result = core.buildRecords("2,991001,測試甲,11", roster, template, {...selection, reason: "偽造事由"});
+test("deduplicate by school number and keep a custom multiline reason", () => {
+  const reason = "自行補充的獎懲事由。\n第二行說明。";
+  const result = core.buildRecords("2,991001,測試甲,11", roster, template, {...selection, reason});
   assert.equal(result.records.length, 2);
   assert.equal(result.resolved.matches[0].count, 3);
-  assert.equal(result.records[0].reason, "測試事由甲。");
+  assert.equal(result.records[0].reason, reason);
+  assert.equal(result.records[1].reason, reason);
 });
 
 test("optional adjustments may be blank, but amount requires a selected adjustment reason", () => {
@@ -187,4 +189,40 @@ test("editing requires a valid selection, a chosen field and unchanged roster id
   assert.throws(() => core.editRecords(records, [9], template, {amount: "小過一次"}), /重新選取/);
   assert.throws(() => core.editRecords(records, [0], template, {}), /至少一組/);
   assert.throws(() => core.editRecords(records, [0], template, {name: "其他學生"}), /名冊/);
+});
+
+test("amount and adjustment edits preserve each student's custom reason in the export", () => {
+  const {records} = core.buildRecords("2,11", roster, template, {...selection, reason: "自訂事由甲。\n第二行。"});
+  const distinct = core.editRecords(records, [1], template, {reason: "自訂事由乙。"});
+  const edited = core.editRecords(distinct, [0, 1], template, {amount: "小過一次", adjustReason: "行為之動機", adjustAmount: "申誡一次"});
+  assert.deepEqual(edited.map(record => record.reason), ["自訂事由甲。\n第二行。", "自訂事由乙。"]);
+  const workbook = xlsx.read(xlsx.write(core.exportWorkbook(edited, template, xlsx), {type: "buffer", bookType: "xlsx"}));
+  const data = xlsx.utils.sheet_to_json(workbook.Sheets.工作表1, {header: 1});
+  assert.deepEqual(data.slice(1).map(row => row[5]), edited.map(record => record.reason));
+});
+
+test("reason-only batch edits preserve different clauses and unselected rows", () => {
+  const {records} = core.buildRecords("2,11,12", roster, template, selection);
+  const mixed = core.editRecords(records, [2], template, {article: "第20條", clause: "第17款", item: "第1目"});
+  const edited = core.editRecords(mixed, [0, 2], template, {reason: "共同自訂事由。"});
+  for (const index of [0, 2]) {
+    assert.equal(edited[index].reason, "共同自訂事由。");
+    for (const key of ["school", "name", "article", "clause", "item", "amount"]) assert.equal(edited[index][key], mixed[index][key]);
+  }
+  assert.equal(edited[1], mixed[1]);
+});
+
+test("changing a rule reloads its default unless an explicit custom reason is supplied", () => {
+  const {records} = core.buildRecords("2", roster, template, {...selection, reason: "原本自訂內容。"});
+  assert.equal(core.editRecords(records, [0], template, {article: "第19條", clause: "第1款", item: ""})[0].reason, "原本自訂內容。");
+  const patch = {article: "第20條", clause: "第17款", item: "第2目"};
+  assert.equal(core.editRecords(records, [0], template, patch)[0].reason, "測試事由丙。");
+  assert.equal(core.editRecords(records, [0], template, {...patch, reason: "換條款後另外補充。"})[0].reason, "換條款後另外補充。");
+});
+
+test("an explicitly empty reason is rejected instead of silently using the template text", () => {
+  assert.throws(() => core.buildRecords("2", roster, template, {...selection, reason: " \n "}), /填寫獎懲事由/);
+  const {records} = core.buildRecords("2", roster, template, selection);
+  assert.throws(() => core.editRecords(records, [0], template, {reason: ""}), /填寫獎懲事由/);
+  assert.equal(records[0].reason, "測試事由甲。");
 });

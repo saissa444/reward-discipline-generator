@@ -202,7 +202,7 @@ async function main() {
     await text("selectedCount", /2 \/ 3/);
     assert.equal(await $("selectAll").evaluate(element => element.indeterminate), true);
     await $("editSelectedBtn").click();
-    for (const id of ["editApplyRule", "editApplyAmount", "editApplyAdjust"]) assert.equal(await $(id).isChecked(), false);
+    for (const id of ["editApplyRule", "editApplyReason", "editApplyAmount", "editApplyAdjust"]) assert.equal(await $(id).isChecked(), false);
     await $("saveEditBtn").click();
     await text("editStatus", /至少一組/);
     assert.equal(await $("recordEditor").isVisible(), true);
@@ -245,6 +245,53 @@ async function main() {
     firstAdjusted.adjustReason = "";
     firstAdjusted.adjustAmount = "";
     await checkDownload({count: 3, rows: [firstAdjusted, untouched, third]});
+
+    // Custom reasons survive other edits and round-trip through the download.
+    const singleReason = "單筆自行補充的獎懲事由。\n保留第二行內容。";
+    await editRow(0);
+    await $("editReason").fill(singleReason);
+    await $("editApplyAmount").uncheck();
+    await $("editApplyAmount").check();
+    await $("editApplyAdjust").uncheck();
+    await $("editApplyAdjust").check();
+    assert.equal(await $("editReason").inputValue(), singleReason);
+    await $("saveEditBtn").click();
+    firstAdjusted.reason = singleReason;
+    await checkDownload({count: 3, rows: [firstAdjusted, untouched, third]});
+    await editRow(0);
+    assert.equal(await $("editReason").inputValue(), singleReason);
+    await $("editAmount").selectOption(singleAmount);
+    await $("saveEditBtn").click();
+    firstAdjusted.amount = singleAmount;
+    assert.equal(await cell(0, "reason").innerText(), singleReason);
+    await checkDownload({count: 3, rows: [firstAdjusted, untouched, third]});
+
+    const batchReason = "核取多筆後共同填寫的自訂事由。\n第二行補充。";
+    await $("editSelectedBtn").click();
+    await $("editApplyReason").check();
+    await $("editReason").fill(batchReason);
+    await $("editApplyAmount").check();
+    await $("editApplyAmount").uncheck();
+    assert.equal(await $("editReason").inputValue(), batchReason);
+    await $("saveEditBtn").click();
+    firstAdjusted.reason = batchReason;
+    third.reason = batchReason;
+    await checkDownload({count: 3, rows: [firstAdjusted, untouched, third]});
+    const customURL = await $("exportBtn").getAttribute("href");
+    await editRow(0);
+    await $("editReason").fill(" \n ");
+    await $("saveEditBtn").click();
+    await text("editStatus", /填寫獎懲事由/);
+    assert.equal(await $("recordEditor").isVisible(), true);
+    assert.equal(await $("exportBtn").getAttribute("href"), customURL);
+    await $("cancelEditBtn").click();
+    await editRow(0);
+    await $("editArticle").selectOption(withoutItem.article);
+    await $("editClause").selectOption(withoutItem.clause);
+    assert.equal(await $("editReason").inputValue(), withoutItem.reason);
+    await $("cancelEditBtn").click();
+    assert.equal(await $("exportBtn").getAttribute("href"), customURL);
+
     await $("selectAll").check();
     await text("selectedCount", /3 \/ 3/);
     await $("selectAll").uncheck();
@@ -278,6 +325,22 @@ async function main() {
     await choose(withoutItem.article, withoutItem.clause);
     await $("previewBtn").click();
     await text("resultStatus", /成功建立 1 筆/);
+    const mainReason = "共同獎懲事由帶入後自行修改。\n這一行也應保留。";
+    await $("reason").fill(mainReason);
+    assert.equal(await $("exportBtn").getAttribute("href"), null);
+    await $("amount").selectOption(singleAmount);
+    await $("adjustReason").selectOption(template.adjustmentOptions[0]);
+    await $("adjustAmount").selectOption(template.amountOptions[0]);
+    assert.equal(await $("reason").inputValue(), mainReason);
+    await $("previewBtn").click();
+    await checkDownload({count: 1, fields: {...withoutItem, reason: mainReason, amount: singleAmount, adjustReason: template.adjustmentOptions[0], adjustAmount: template.amountOptions[0]}});
+    await $("reason").fill("  ");
+    await $("previewBtn").click();
+    await text("resultStatus", /填寫獎懲事由/);
+    assert.equal(await $("exportBtn").getAttribute("href"), null);
+    await choose(withItem.article, withItem.clause, withItem.item);
+    assert.equal(await $("reason").inputValue(), withItem.reason);
+    await $("previewBtn").click();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     assert.deepEqual(errors, [], "Browser Console must be clean");
     assert.deepEqual(nonLocalRequests, [], "No external CDN or data requests");
@@ -290,7 +353,7 @@ async function main() {
       assert.match(await brokenPage.locator("#startupStatus").innerText(), /Excel 元件未完整載入/);
       assert.equal(await brokenPage.locator("#previewBtn").isDisabled(), true);
     } finally { await brokenContext.close(); }
-    console.log(JSON.stringify({engine, mobile: "iPhone 13", rosterCount: students.length, rulesCheckedInDOM: template.rules.length, editorRulesChecked: template.rules.length, exportedDownloads: downloadsChecked, singleAndBatchEditsSynced: true, partialMatchExport: true, consoleErrors: errors.length, externalRequests: nonLocalRequests.length, uploadRequests: writes.length, missingLibraryHandled: true, result: "PASS"}));
+    console.log(JSON.stringify({engine, mobile: "iPhone 13", rosterCount: students.length, rulesCheckedInDOM: template.rules.length, editorRulesChecked: template.rules.length, exportedDownloads: downloadsChecked, customReasonsPreserved: true, singleAndBatchEditsSynced: true, partialMatchExport: true, consoleErrors: errors.length, externalRequests: nonLocalRequests.length, uploadRequests: writes.length, missingLibraryHandled: true, result: "PASS"}));
   } finally { await browser.close(); if (server) await new Promise(resolve => server.close(resolve)); }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

@@ -149,13 +149,15 @@
     if (relevant.some(rule => rule.item) && !selection.item) throw new Error("請選擇獎懲依據（目）。");
     const rule = relevant.find(row => row.item === selection.item);
     if (!rule) throw new Error("尚未帶入有效的獎懲事由。");
+    const reason = Object.prototype.hasOwnProperty.call(selection, "reason") ? clean(selection.reason) : rule.reason;
+    if (!reason) throw new Error("請填寫獎懲事由。");
     if (!template.amountOptions.includes(selection.amount)) throw new Error("請選擇有效的額度。");
     if (selection.adjustReason && !template.adjustmentOptions.includes(selection.adjustReason)) throw new Error("請選擇有效的加重減輕事由。");
     if (selection.adjustAmount && !selection.adjustReason) throw new Error("選擇加重減輕額度前，請先選擇加重減輕事由。");
     if (selection.adjustAmount && !template.amountOptions.includes(selection.adjustAmount)) throw new Error("請選擇有效的加重減輕額度。");
     return {
       article: rule.article, clause: rule.clause,
-      item: rule.item, reason: rule.reason, amount: selection.amount,
+      item: rule.item, reason, amount: selection.amount,
       adjustReason: selection.adjustReason || "", adjustAmount: selection.adjustAmount || ""
     };
   }
@@ -172,15 +174,20 @@
   }
 
   function editRecords(records, indexes, template, patch) {
-    const editable = ["article", "clause", "item", "amount", "adjustReason", "adjustAmount"];
+    const editable = ["article", "clause", "item", "reason", "amount", "adjustReason", "adjustAmount"];
     if (!Object.keys(patch).length) throw new Error("請勾選至少一組要修改的欄位。");
     if (Object.keys(patch).some(key => !editable.includes(key))) throw new Error("學生資料依名冊顯示，請修改獎懲欄位。");
     if (!indexes.length) throw new Error("請先選取要編輯的紀錄。");
     const selected = new Set(indexes);
     if (Array.from(selected).some(index => !Number.isInteger(index) || index < 0 || index >= records.length)) throw new Error("選取的紀錄已變更，請重新選取。");
     // Validate every edited record before returning; a failed batch changes nothing.
-    return records.map((record, index) => selected.has(index) ?
-      Object.assign({}, record, rewardDetails(template, Object.assign({}, record, patch))) : record);
+    return records.map((record, index) => {
+      if (!selected.has(index)) return record;
+      const updated = Object.assign({}, record, patch);
+      const changedRule = ["article", "clause", "item"].some(key => Object.prototype.hasOwnProperty.call(patch, key) && patch[key] !== record[key]);
+      if (changedRule && !Object.prototype.hasOwnProperty.call(patch, "reason")) delete updated.reason;
+      return Object.assign({}, record, rewardDetails(template, updated));
+    });
   }
 
   function exportWorkbook(records, template, xlsx) {

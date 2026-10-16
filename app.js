@@ -57,12 +57,14 @@
     $("article").disabled = !template;
     ["clause", "item", "amount", "adjustReason", "adjustAmount"].forEach(id => { $(id).disabled = true; });
     $("reason").value = "";
+    $("reason").disabled = true;
   }
 
   function syncRuleDetails() {
     const rule = template && template.rules.find(row => row.article === $("article").value &&
       row.clause === $("clause").value && row.item === $("item").value);
     $("reason").value = rule ? rule.reason : "";
+    $("reason").disabled = !rule;
     $("amount").disabled = !rule;
     $("adjustReason").disabled = !rule;
     $("adjustAmount").disabled = !rule || !$("adjustReason").value;
@@ -184,7 +186,7 @@
   }
 
   function selection() {
-    return Object.fromEntries(["article", "clause", "item", "amount", "adjustReason", "adjustAmount"].map(id => [id, $(id).value]));
+    return Object.fromEntries(["article", "clause", "item", "reason", "amount", "adjustReason", "adjustAmount"].map(id => [id, $(id).value]));
   }
 
   function updateSelection() {
@@ -261,15 +263,19 @@
   function syncEditor() {
     const applyRule = $("editApplyRule").checked;
     const relevant = template.rules.filter(rule => rule.article === $("editArticle").value && rule.clause === $("editClause").value);
-    const rule = relevant.find(rule => rule.item === $("editItem").value);
-    $("editReason").value = rule ? rule.reason : "";
     $("editArticle").disabled = !applyRule;
     $("editClause").disabled = !applyRule || !$("editArticle").value;
     $("editItem").disabled = !applyRule || !relevant.some(rule => rule.item);
-    $("editReason").disabled = !applyRule;
+    $("editReason").disabled = !$("editApplyReason").checked;
     $("editAmount").disabled = !$("editApplyAmount").checked;
     $("editAdjustReason").disabled = !$("editApplyAdjust").checked;
     $("editAdjustAmount").disabled = !$("editApplyAdjust").checked || !$("editAdjustReason").value;
+  }
+
+  function fillEditorReason() {
+    const rule = template.rules.find(rule => rule.article === $("editArticle").value &&
+      rule.clause === $("editClause").value && rule.item === $("editItem").value);
+    $("editReason").value = rule ? rule.reason : "";
   }
 
   function fillEditItems(value) {
@@ -277,6 +283,7 @@
     const items = Array.from(new Set(relevant.map(rule => rule.item).filter(Boolean)));
     fillOptions("editItem", items, items.length ? "請選擇目" : relevant.length ? "無目（不需選擇）" : "請先選擇款");
     $("editItem").value = value || "";
+    fillEditorReason();
     syncEditor();
   }
 
@@ -296,7 +303,7 @@
     $("editTitle").textContent = "編輯 " + indexes.length + " 筆紀錄";
     $("editStudentSummary").textContent = single ? records[0].name + "（學號 " + records[0].school + "）" :
       records.slice(0, 5).map(record => record.name).join("、") + (records.length > 5 ? "等 " + records.length + " 位學生" : "");
-    ["editApplyRule", "editApplyAmount", "editApplyAdjust"].forEach(id => { $(id).checked = single; });
+    ["editApplyRule", "editApplyReason", "editApplyAmount", "editApplyAdjust"].forEach(id => { $(id).checked = single; });
     fillOptions("editArticle", Array.from(new Set(template.rules.map(rule => rule.article))), "請選擇條");
     $("editArticle").value = common("article");
     fillOptions("editAmount", template.amountOptions, "請選擇額度");
@@ -306,6 +313,7 @@
     fillOptions("editAdjustAmount", template.amountOptions, "無（選填）");
     $("editAdjustAmount").value = common("adjustAmount");
     fillEditClauses(common("clause"), common("item"));
+    $("editReason").value = common("reason");
     $("editStatus").textContent = "";
     $("editStatus").className = "";
     $("recordEditor").showModal();
@@ -321,6 +329,7 @@
         patch.item = $("editItem").value;
       }
       if ($("editApplyAmount").checked) patch.amount = $("editAmount").value;
+      if ($("editApplyReason").checked) patch.reason = $("editReason").value;
       if ($("editApplyAdjust").checked) {
         patch.adjustReason = $("editAdjustReason").value;
         patch.adjustAmount = patch.adjustReason ? $("editAdjustAmount").value : "";
@@ -352,6 +361,7 @@
   $("rosterFile").addEventListener("change", event => { importFile("roster", event.target); });
   $("templateFile").addEventListener("change", event => { importFile("template", event.target); });
   $("studentInput").addEventListener("input", () => { invalidatePreview(); checkStudents(); });
+  $("reason").addEventListener("input", () => invalidatePreview());
   [["article", updateClause], ["clause", updateItem], ["item", syncRuleDetails]].forEach(([id, handler]) => {
     $(id).addEventListener("change", () => { invalidatePreview(); handler(); });
   });
@@ -376,8 +386,8 @@
     if ($("editApplyAmount").checked) $("editAmount").value = template.defaultAmounts[$("editArticle").value] || "";
   });
   $("editClause").addEventListener("change", () => fillEditItems());
-  $("editItem").addEventListener("change", syncEditor);
-  ["editApplyRule", "editApplyAmount", "editApplyAdjust"].forEach(id => $(id).addEventListener("change", syncEditor));
+  $("editItem").addEventListener("change", () => { fillEditorReason(); syncEditor(); });
+  ["editApplyRule", "editApplyReason", "editApplyAmount", "editApplyAdjust"].forEach(id => $(id).addEventListener("change", syncEditor));
   $("editAdjustReason").addEventListener("change", () => {
     if (!$("editAdjustReason").value) $("editAdjustAmount").value = "";
     syncEditor();
